@@ -1,0 +1,21 @@
+<module name="dual_avoider">
+  <doc><brief>Avoider using orange (front) and green mat (bottom) detections</brief></doc>
+  <depends>cv_detect_dual</depends>
+  <header>
+    <file name="dual_avoider.h"/>
+  </header>
+  <init fun="dual_avoider_init()"/>
+  <periodic fun="dual_avoider_periodic()" freq="4"/>
+  <makefile>
+    <file name="dual_avoider.c"/>
+  </makefile>
+</module>
+```
+
+---
+
+### 4. `airframe_changes.xml` → Changes go into your airframe file
+
+This is **not** a file you copy anywhere directly — it's a patch guide. Open your airframe file:
+```
+~/paparazzi/conf/airframes/tudelft/bebop_course_orangeavoid.xml

@@ -1,0 +1,12 @@
+<module name="cv_detect_dual" dir="computer_vision">
+  <doc><brief>Dual camera color detector: orange (front) + green (bottom)</brief></doc>
+  <depends>video_thread</depends>
+  <header>
+    <file name="cv_detect_dual.h"/>
+  </header>
+  <init fun="cv_detect_dual_init()"/>
+  <periodic fun="cv_detect_dual_periodic()" freq="4"/>
+  <makefile>
+    <file name="cv_detect_dual.c"/>
+  </makefile>
+</module>
