@@ -22,7 +22,6 @@
 #include "generated/airframe.h"
 #include "state.h"
 #include "modules/core/abi.h"
-#include <time.h>
 #include <stdio.h>
 
 #include "generated/flight_plan.h"
@@ -36,11 +35,22 @@
 #define VERBOSE_PRINT(...)
 #endif
 
+#ifndef OA_GREEN_ROI_FRAC_THRESHOLD
+#define OA_GREEN_ROI_FRAC_THRESHOLD 0.90f
+#endif
+
+#ifndef OA_SEARCH_YAW_INCREMENT_DEG
+#define OA_SEARCH_YAW_INCREMENT_DEG 10.f
+#endif
+
+#ifndef OA_FORWARD_STEP_M
+#define OA_FORWARD_STEP_M 0.20f
+#endif
+
 static uint8_t moveWaypointForward(uint8_t waypoint, float distanceMeters);
 static uint8_t calculateForwards(struct EnuCoor_i *new_coor, float distanceMeters);
 static uint8_t moveWaypoint(uint8_t waypoint, struct EnuCoor_i *new_coor);
 static uint8_t increase_nav_heading(float incrementDegrees);
-static uint8_t chooseRandomIncrementAvoidance(void);
 
 enum navigation_state_t {
   SAFE,
@@ -51,15 +61,16 @@ enum navigation_state_t {
 
 // define settings
 float oa_color_count_frac = 0.18f;
+float oa_green_roi_frac_threshold = OA_GREEN_ROI_FRAC_THRESHOLD;
+float oa_search_yaw_increment_deg = OA_SEARCH_YAW_INCREMENT_DEG;
+float oa_forward_step_m = OA_FORWARD_STEP_M;
 
 // define and initialise global variables
 enum navigation_state_t navigation_state = SEARCH_FOR_SAFE_HEADING;
-int32_t color_count = 0;                // orange color count from color filter for obstacle detection
-int16_t obstacle_free_confidence = 0;   // a measure of how certain we are that the way ahead is safe.
-float heading_increment = 5.f;          // heading angle increment [deg]
-float maxDistance = 2.25;               // max waypoint displacement [m]
-
-const int16_t max_trajectory_confidence = 5; // number of consecutive negative object detections to be sure we are obstacle free
+int32_t color_count = 0;
+int16_t roi_color_count = 0;
+int16_t roi_area = 0;
+float heading_increment = 10.f;
 
 /*
  * This next section defines an ABI messaging event (http://wiki.paparazziuav.org/wiki/ABI), necessary
@@ -74,10 +85,12 @@ const int16_t max_trajectory_confidence = 5; // number of consecutive negative o
 static abi_event color_detection_ev;
 static void color_detection_cb(uint8_t __attribute__((unused)) sender_id,
                                int16_t __attribute__((unused)) pixel_x, int16_t __attribute__((unused)) pixel_y,
-                               int16_t __attribute__((unused)) pixel_width, int16_t __attribute__((unused)) pixel_height,
+                               int16_t pixel_width, int16_t pixel_height,
                                int32_t quality, int16_t __attribute__((unused)) extra)
 {
   color_count = quality;
+  roi_color_count = pixel_width;
+  roi_area = pixel_height;
 }
 
 /*
@@ -85,9 +98,7 @@ static void color_detection_cb(uint8_t __attribute__((unused)) sender_id,
  */
 void orange_avoider_init(void)
 {
-  // Initialise random values
-  srand(time(NULL));
-  chooseRandomIncrementAvoidance();
+  heading_increment = oa_search_yaw_increment_deg;
 
   // bind our colorfilter callbacks to receive the color filter outputs
   AbiBindMsgVISUAL_DETECTION(ORANGE_AVOIDER_VISUAL_DETECTION_ID, &color_detection_ev, color_detection_cb);
@@ -103,69 +114,46 @@ void orange_avoider_periodic(void)
     return;
   }
 
-  // compute current color thresholds
-  int32_t color_count_threshold = oa_color_count_frac * front_camera.output_size.w * front_camera.output_size.h;
+  heading_increment = oa_search_yaw_increment_deg;
 
-  VERBOSE_PRINT("Color_count: %d  threshold: %d state: %d \n", color_count, color_count_threshold, navigation_state);
-
-  // update our safe confidence using color threshold
-  if(color_count < color_count_threshold){
-    obstacle_free_confidence++;
-  } else {
-    obstacle_free_confidence -= 2;  // be more cautious with positive obstacle detections
+  float roi_green_frac = 0.f;
+  if (roi_area > 0) {
+    roi_green_frac = (float)roi_color_count / (float)roi_area;
   }
 
-  // bound obstacle_free_confidence
-  Bound(obstacle_free_confidence, 0, max_trajectory_confidence);
-
-  float moveDistance = fminf(maxDistance, 0.2f * obstacle_free_confidence);
+  VERBOSE_PRINT("Color_count: %d ROI: %d/%d (%0.2f) threshold: %0.2f state: %d\n",
+                color_count, roi_color_count, roi_area, roi_green_frac,
+                oa_green_roi_frac_threshold, navigation_state);
 
   switch (navigation_state){
     case SAFE:
-      // Move waypoint forward
-      moveWaypointForward(WP_TRAJECTORY, 1.5f * moveDistance);
-      if (!InsideObstacleZone(WaypointX(WP_TRAJECTORY),WaypointY(WP_TRAJECTORY))){
-        navigation_state = OUT_OF_BOUNDS;
-      } else if (obstacle_free_confidence == 0){
-        navigation_state = OBSTACLE_FOUND;
+      if (roi_green_frac >= oa_green_roi_frac_threshold) {
+        moveWaypointForward(WP_TRAJECTORY, oa_forward_step_m);
+        moveWaypointForward(WP_GOAL, oa_forward_step_m);
       } else {
-        moveWaypointForward(WP_GOAL, moveDistance);
+        waypoint_move_here_2d(WP_GOAL);
+        waypoint_move_here_2d(WP_TRAJECTORY);
+        navigation_state = SEARCH_FOR_SAFE_HEADING;
       }
-
       break;
     case OBSTACLE_FOUND:
-      // stop
+      // kept for backward compatibility, behaves like search state
       waypoint_move_here_2d(WP_GOAL);
       waypoint_move_here_2d(WP_TRAJECTORY);
-
-      // randomly select new search direction
-      chooseRandomIncrementAvoidance();
-
       navigation_state = SEARCH_FOR_SAFE_HEADING;
-
       break;
     case SEARCH_FOR_SAFE_HEADING:
-      increase_nav_heading(heading_increment);
-
-      // make sure we have a couple of good readings before declaring the way safe
-      if (obstacle_free_confidence >= 2){
+      waypoint_move_here_2d(WP_GOAL);
+      waypoint_move_here_2d(WP_TRAJECTORY);
+      if (roi_green_frac >= oa_green_roi_frac_threshold) {
         navigation_state = SAFE;
+      } else {
+        increase_nav_heading(heading_increment);
       }
       break;
     case OUT_OF_BOUNDS:
-      increase_nav_heading(heading_increment);
-      moveWaypointForward(WP_TRAJECTORY, 1.5f);
-
-      if (InsideObstacleZone(WaypointX(WP_TRAJECTORY),WaypointY(WP_TRAJECTORY))){
-        // add offset to head back into arena
-        increase_nav_heading(heading_increment);
-
-        // reset safe counter
-        obstacle_free_confidence = 0;
-
-        // ensure direction is safe before continuing
-        navigation_state = SEARCH_FOR_SAFE_HEADING;
-      }
+      // kept for backward compatibility, behaves like search state
+      navigation_state = SEARCH_FOR_SAFE_HEADING;
       break;
     default:
       break;
@@ -228,19 +216,4 @@ uint8_t moveWaypoint(uint8_t waypoint, struct EnuCoor_i *new_coor)
   return false;
 }
 
-/*
- * Sets the variable 'heading_increment' randomly positive/negative
- */
-uint8_t chooseRandomIncrementAvoidance(void)
-{
-  // Randomly choose CW or CCW avoiding direction
-  if (rand() % 2 == 0) {
-    heading_increment = 5.f;
-    VERBOSE_PRINT("Set avoidance increment to: %f\n", heading_increment);
-  } else {
-    heading_increment = -5.f;
-    VERBOSE_PRINT("Set avoidance increment to: %f\n", heading_increment);
-  }
-  return false;
-}
 

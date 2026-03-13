@@ -25,6 +25,8 @@
     <define name="COLOR_OBJECT_DETECTOR_CR_MIN2" value="0" description="Filter 2 min red chroma"/>
     <define name="COLOR_OBJECT_DETECTOR_CR_MAX2" value="0" description="Filter 2 max red chroma"/>
     <define name="COLOR_OBJECT_DETECTOR_DRAW2" value="FALSE|TRUE" description="Whether or not to draw on image"/>
+    <define name="COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC" value="0.3" description="Bottom ROI width fraction of image width (0..1)"/>
+    <define name="COLOR_OBJECT_DETECTOR_ROI_HEIGHT_FRAC" value="0.3" description="Bottom ROI height fraction of image height (0..1)"/>
   </doc>
 
   <settings>

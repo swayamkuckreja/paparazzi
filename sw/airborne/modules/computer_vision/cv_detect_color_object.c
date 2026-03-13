@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <math.h>
+#include <limits.h>
 #include "pthread.h"
 
 #define PRINT(string,...) fprintf(stderr, "[object_detector->%s()] " string,__FUNCTION__ , ##__VA_ARGS__)
@@ -50,6 +51,12 @@ static pthread_mutex_t mutex;
 #endif
 #ifndef COLOR_OBJECT_DETECTOR_FPS2
 #define COLOR_OBJECT_DETECTOR_FPS2 0 ///< Default FPS (zero means run at camera fps)
+#endif
+#ifndef COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC
+#define COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC 0.3f
+#endif
+#ifndef COLOR_OBJECT_DETECTOR_ROI_HEIGHT_FRAC
+#define COLOR_OBJECT_DETECTOR_ROI_HEIGHT_FRAC 0.3f
 #endif
 
 // Filter Settings
@@ -75,6 +82,8 @@ struct color_object_t {
   int32_t x_c;
   int32_t y_c;
   uint32_t color_count;
+  uint32_t roi_color_count;
+  uint32_t roi_area;
   bool updated;
 };
 struct color_object_t global_filters[2];
@@ -83,7 +92,8 @@ struct color_object_t global_filters[2];
 uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc, bool draw,
                               uint8_t lum_min, uint8_t lum_max,
                               uint8_t cb_min, uint8_t cb_max,
-                              uint8_t cr_min, uint8_t cr_max);
+                              uint8_t cr_min, uint8_t cr_max,
+                              uint32_t *p_roi_color_count, uint32_t *p_roi_area);
 
 /*
  * object_detector
@@ -124,13 +134,18 @@ static struct image_t *object_detector(struct image_t *img, uint8_t filter)
   int32_t x_c, y_c;
 
   // Filter and find centroid
-  uint32_t count = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max);
-  VERBOSE_PRINT("Color count %d: %u, threshold %u, x_c %d, y_c %d\n", camera, object_count, count_threshold, x_c, y_c);
-  VERBOSE_PRINT("centroid %d: (%d, %d) r: %4.2f a: %4.2f\n", camera, x_c, y_c,
+  uint32_t roi_color_count = 0;
+  uint32_t roi_area = 0;
+  uint32_t count = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max,
+                                        &roi_color_count, &roi_area);
+  VERBOSE_PRINT("Color count f%d: %u, x_c %d, y_c %d, roi %u/%u\n", filter, count, x_c, y_c, roi_color_count, roi_area);
+  VERBOSE_PRINT("centroid f%d: (%d, %d) r: %4.2f a: %4.2f\n", filter, x_c, y_c,
         hypotf(x_c, y_c) / hypotf(img->w * 0.5, img->h * 0.5), RadOfDeg(atan2f(y_c, x_c)));
 
   pthread_mutex_lock(&mutex);
   global_filters[filter-1].color_count = count;
+  global_filters[filter-1].roi_color_count = roi_color_count;
+  global_filters[filter-1].roi_area = roi_area;
   global_filters[filter-1].x_c = x_c;
   global_filters[filter-1].y_c = y_c;
   global_filters[filter-1].updated = true;
@@ -209,12 +224,44 @@ void color_object_detector_init(void)
 uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc, bool draw,
                               uint8_t lum_min, uint8_t lum_max,
                               uint8_t cb_min, uint8_t cb_max,
-                              uint8_t cr_min, uint8_t cr_max)
+                              uint8_t cr_min, uint8_t cr_max,
+                              uint32_t *p_roi_color_count, uint32_t *p_roi_area)
 {
   uint32_t cnt = 0;
   uint32_t tot_x = 0;
   uint32_t tot_y = 0;
   uint8_t *buffer = img->buf;
+
+  uint16_t roi_w = (uint16_t)(img->w * COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC);
+  uint16_t roi_h = (uint16_t)(img->h * COLOR_OBJECT_DETECTOR_ROI_HEIGHT_FRAC);
+  if (roi_w == 0) {
+    roi_w = 1;
+  }
+  if (roi_h == 0) {
+    roi_h = 1;
+  }
+  if (roi_w > img->w) {
+    roi_w = img->w;
+  }
+  if (roi_h > img->h) {
+    roi_h = img->h;
+  }
+  uint16_t roi_y_min = (img->h - roi_h) / 2;
+  uint16_t roi_y_max = roi_y_min + roi_h;
+  uint16_t roi_x_max = roi_w;
+  uint32_t roi_color_count = 0;
+
+  if (draw) {
+    struct point_t from;
+    struct point_t to;
+    uint8_t roi_line_color[4] = {90, 255, 240, 255};
+
+    from.x = roi_x_max;
+    from.y = roi_y_min;
+    to.x = roi_x_max;
+    to.y = roi_y_max - 1;
+    image_draw_line_color(img, &from, &to, roi_line_color);
+  }
 
   // Go through all the pixels
   for (uint16_t y = 0; y < img->h; y++) {
@@ -240,6 +287,9 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
         cnt ++;
         tot_x += x;
         tot_y += y;
+        if (y >= roi_y_min && y < roi_y_max && x <= roi_x_max) {
+          roi_color_count++;
+        }
         if (draw){
           *yp = 255;  // make pixel brighter in image
         }
@@ -253,6 +303,14 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
     *p_xc = 0;
     *p_yc = 0;
   }
+
+  if (p_roi_color_count != NULL) {
+    *p_roi_color_count = roi_color_count;
+  }
+  if (p_roi_area != NULL) {
+    *p_roi_area = (uint32_t)roi_w * (uint32_t)roi_h;
+  }
+
   return cnt;
 }
 
@@ -264,13 +322,17 @@ void color_object_detector_periodic(void)
   pthread_mutex_unlock(&mutex);
 
   if(local_filters[0].updated){
+    int16_t roi_count = (int16_t)Min(local_filters[0].roi_color_count, (uint32_t)INT16_MAX);
+    int16_t roi_area = (int16_t)Min(local_filters[0].roi_area, (uint32_t)INT16_MAX);
     AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION1_ID, local_filters[0].x_c, local_filters[0].y_c,
-        0, 0, local_filters[0].color_count, 0);
+        roi_count, roi_area, local_filters[0].color_count, 0);
     local_filters[0].updated = false;
   }
   if(local_filters[1].updated){
+    int16_t roi_count = (int16_t)Min(local_filters[1].roi_color_count, (uint32_t)INT16_MAX);
+    int16_t roi_area = (int16_t)Min(local_filters[1].roi_area, (uint32_t)INT16_MAX);
     AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION2_ID, local_filters[1].x_c, local_filters[1].y_c,
-        0, 0, local_filters[1].color_count, 1);
+        roi_count, roi_area, local_filters[1].color_count, 1);
     local_filters[1].updated = false;
   }
 }
