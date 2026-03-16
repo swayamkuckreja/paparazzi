@@ -24,6 +24,11 @@
 #include "modules/core/abi.h"
 #include <time.h>
 #include <stdio.h>
+#include <stdbool.h>
+#include <math.h>
+
+static uint32_t of_msg_cnt = 0;
+
 
 #include "generated/flight_plan.h"
 
@@ -41,6 +46,28 @@ static uint8_t calculateForwards(struct EnuCoor_i *new_coor, float distanceMeter
 static uint8_t moveWaypoint(uint8_t waypoint, struct EnuCoor_i *new_coor);
 static uint8_t increase_nav_heading(float incrementDegrees);
 static uint8_t chooseRandomIncrementAvoidance(void);
+static abi_event opticflow_ev;
+
+float of_div_size = 0.f;
+float of_noise = 1.f;        // start “bad” until a message arrives
+float of_div_thresh = 0.3f;  // tune later
+
+
+static void opticflow_cb(uint8_t sender_id, uint32_t stamp,
+                         float flow_x, float flow_y,
+                         float flow_der_x, float flow_der_y,
+                         float noise_measurement,
+                         float div_size)
+{
+  (void)sender_id; (void)stamp; (void)flow_x; (void)flow_y;
+  (void)flow_der_x; (void)flow_der_y;
+
+  of_msg_cnt++;
+  of_noise = noise_measurement;
+  of_div_size = div_size;
+
+}
+
 
 enum navigation_state_t {
   SAFE,
@@ -91,6 +118,7 @@ void orange_avoider_init(void)
 
   // bind our colorfilter callbacks to receive the color filter outputs
   AbiBindMsgVISUAL_DETECTION(ORANGE_AVOIDER_VISUAL_DETECTION_ID, &color_detection_ev, color_detection_cb);
+  AbiBindMsgOPTICAL_FLOW(ABI_BROADCAST, &opticflow_ev, opticflow_cb);
 }
 
 /*
@@ -106,14 +134,23 @@ void orange_avoider_periodic(void)
   // compute current color thresholds
   int32_t color_count_threshold = oa_color_count_frac * front_camera.output_size.w * front_camera.output_size.h;
 
-  VERBOSE_PRINT("Color_count: %d  threshold: %d state: %d \n", color_count, color_count_threshold, navigation_state);
+  VERBOSE_PRINT("Color=%d/%d state=%d | OF cnt=%u noise=%.2f div=%.2f\n",color_count, color_count_threshold, navigation_state, (unsigned)of_msg_cnt, of_noise, of_div_size);
+ 
+  ...
+}
 
-  // update our safe confidence using color threshold
-  if(color_count < color_count_threshold){
+
+  
+  bool obstacle_detected_color = (color_count >= color_count_threshold);
+  bool obstacle_detected_flow  = (of_noise < 0.8f && of_div_size > of_div_thresh);
+  bool obstacle_detected = obstacle_detected_color || obstacle_detected_flow;
+
+  if (!obstacle_detected) {
     obstacle_free_confidence++;
   } else {
-    obstacle_free_confidence -= 2;  // be more cautious with positive obstacle detections
+    obstacle_free_confidence -= 2;  // cautious on any obstacle detection
   }
+
 
   // bound obstacle_free_confidence
   Bound(obstacle_free_confidence, 0, max_trajectory_confidence);
