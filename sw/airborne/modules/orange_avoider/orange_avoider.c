@@ -47,6 +47,8 @@ static uint8_t moveWaypoint(uint8_t waypoint, struct EnuCoor_i *new_coor);
 static uint8_t increase_nav_heading(float incrementDegrees);
 static uint8_t chooseRandomIncrementAvoidance(void);
 static abi_event opticflow_ev;
+static uint32_t of_msg_cnt = 0;
+
 
 float of_div_size = 0.f;
 float of_noise = 1.f;        // start “bad” until a message arrives
@@ -134,9 +136,9 @@ void orange_avoider_periodic(void)
   // compute current color thresholds
   int32_t color_count_threshold = oa_color_count_frac * front_camera.output_size.w * front_camera.output_size.h;
 
-  VERBOSE_PRINT("Color=%d/%d state=%d | OF cnt=%u noise=%.2f div=%.2f\n",color_count, color_count_threshold, navigation_state, (unsigned)of_msg_cnt, of_noise, of_div_size);
- 
-  ...
+  VERBOSE_PRINT("### NEW BUILD ### Color=%d thr=%d state=%d\n",
+              color_count, color_count_threshold, navigation_state);
+
 }
 
 
