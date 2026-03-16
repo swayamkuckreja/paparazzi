@@ -96,9 +96,9 @@
     </module>
     <module name="orange_avoider">
       <define name="ORANGE_AVOIDER_VISUAL_DETECTION_ID" value="COLOR_OBJECT_DETECTION2_ID"/>
-      <define name="OA_GREEN_ROI_FRAC_THRESHOLD" value="0.90"/>
+      <define name="OA_GREEN_ROI_FRAC_THRESHOLD" value="0.70"/>
       <define name="OA_SEARCH_YAW_INCREMENT_DEG" value="10.0"/>
-      <define name="OA_FORWARD_STEP_M" value="0.20"/>
+      <define name="OA_FORWARD_STEP_M" value="1.0"/>
     </module>
     <module name="video_rtp_stream">
       <define name="VIEWVIDEO_CAMERA" value="front_camera"/>
