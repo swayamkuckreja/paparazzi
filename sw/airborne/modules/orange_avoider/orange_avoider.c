@@ -27,7 +27,7 @@
 #include <stdbool.h>
 #include <math.h>
 
-static uint32_t of_msg_cnt = 0;
+
 
 
 #include "generated/flight_plan.h"
@@ -55,11 +55,14 @@ float of_noise = 1.f;        // start “bad” until a message arrives
 float of_div_thresh = 0.3f;  // tune later
 
 
-static void opticflow_cb(uint8_t sender_id, uint32_t stamp,
-                         float flow_x, float flow_y,
-                         float flow_der_x, float flow_der_y,
-                         float noise_measurement,
-                         float div_size)
+void opticflow_cb(uint8_t sender_id,
+                  uint32_t stamp,
+                  int16_t flow_x,
+                  int16_t flow_y,
+                  int16_t flow_der_x,
+                  int16_t flow_der_y,
+                  float quality,
+                  float divergence)
 {
   (void)sender_id; (void)stamp; (void)flow_x; (void)flow_y;
   (void)flow_der_x; (void)flow_der_y;
@@ -138,13 +141,12 @@ void orange_avoider_periodic(void)
 
   VERBOSE_PRINT("### NEW BUILD ### Color=%d thr=%d state=%d\n",
               color_count, color_count_threshold, navigation_state);
+  
+              bool obstacle_detected_color = (color_count >= color_count_threshold);
 
 }
 
-
-  
-  bool obstacle_detected_color = (color_count >= color_count_threshold);
-  bool obstacle_detected_flow  = (of_noise < 0.8f && of_div_size > of_div_thresh);
+  bool obstacle_detected_flow = (of_noise > of_div_thresh);
   bool obstacle_detected = obstacle_detected_color || obstacle_detected_flow;
 
   if (!obstacle_detected) {

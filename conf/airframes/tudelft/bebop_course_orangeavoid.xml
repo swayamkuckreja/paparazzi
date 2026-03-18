@@ -77,6 +77,7 @@
     </module>
     <module name="orange_avoider">
       <define name="ORANGE_AVOIDER_VISUAL_DETECTION_ID" value="COLOR_OBJECT_DETECTION1_ID"/>
+      <define name="FLOOR_VISUAL_DETECTION_ID" value="COLOR_OBJECT_DETECTION1_ID"/>
     </module>
 
     <module name="cv_opticflow">
