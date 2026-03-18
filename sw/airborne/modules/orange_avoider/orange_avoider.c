@@ -144,7 +144,7 @@ void orange_avoider_periodic(void)
   
               bool obstacle_detected_color = (color_count >= color_count_threshold);
 
-}
+
 
   bool obstacle_detected_flow = (of_noise > of_div_thresh);
   bool obstacle_detected = obstacle_detected_color || obstacle_detected_flow;
