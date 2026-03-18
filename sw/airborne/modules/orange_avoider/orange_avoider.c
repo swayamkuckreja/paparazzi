@@ -57,22 +57,21 @@ float of_div_thresh = 0.3f;  // tune later
 
 void opticflow_cb(uint8_t sender_id,
                   uint32_t stamp,
-                  int16_t flow_x,
-                  int16_t flow_y,
-                  int16_t flow_der_x,
-                  int16_t flow_der_y,
+                  int flow_x,
+                  int flow_y,
+                  int flow_der_x,
+                  int flow_der_y,
                   float quality,
                   float divergence)
 {
-  (void)sender_id; (void)stamp; (void)flow_x; (void)flow_y;
+  (void)sender_id; (void)stamp;
+  (void)flow_x;    (void)flow_y;
   (void)flow_der_x; (void)flow_der_y;
 
   of_msg_cnt++;
-  of_noise = noise_measurement;
-  of_div_size = div_size;
-
+  of_noise    = quality;
+  of_div_size = divergence;
 }
-
 
 enum navigation_state_t {
   SAFE,
