@@ -49,13 +49,6 @@ static uint8_t chooseRandomIncrementAvoidance(void);
 static abi_event opticflow_ev;
 static uint32_t of_msg_cnt = 0;
 
-
-float of_div_size = 0.f;
-float of_noise = 1.f;        // start “bad” until a message arrives
-float of_div_thresh = 0.3f;  // tune later
-
-
-// --- forward decls (add this near your other static prototypes) ---
 static void opticflow_cb(uint8_t sender_id,
                          uint32_t stamp,
                          int flow_x, int flow_y,
@@ -63,18 +56,17 @@ static void opticflow_cb(uint8_t sender_id,
                          float quality,
                          float divergence);
 
-// ABI opticflow event + counters
 static abi_event opticflow_ev;
 static uint32_t of_msg_cnt = 0;
 
 // Opticflow last values
-static float of_div_size = 0.f;
-static float of_noise = 1.f;          // noise_measurement: lower is better (start "bad")
-static int   of_flow_x_last = 0;      // used for directional avoidance
+static float of_div_size = 0.f;     // last received div_size
+static float of_noise    = 1.f;     // noise_measurement (lower is better), start "bad"
+static int   of_flow_x_last = 0;    // for directional turn
 
-// Tunables (you can later move to airframe defines / GCS settings)
-static float of_noise_max  = 0.8f;    // consistent with opticflow_module.c gating
-static float of_div_thresh = 0.30f;   // divergence/div_size threshold
+// Tunables (later can be moved to settings)
+static float of_noise_max  = 0.8f;
+static float of_div_thresh = 0.30f;
 
 static void opticflow_cb(uint8_t sender_id,
                          uint32_t stamp,
@@ -92,13 +84,12 @@ static void opticflow_cb(uint8_t sender_id,
   of_msg_cnt++;
   of_flow_x_last = flow_x;
 
-  // NOTE: opticflow_module sends noise_measurement as "quality" field
-  of_noise    = quality;
+  // opticflow_module sends noise_measurement in the "quality" field
+  of_noise = quality;
 
-  // NOTE: opticflow_module currently sends div_size as the last field
+  // opticflow_module sends div_size as the last field
   of_div_size = divergence;
 }
-
 
 enum navigation_state_t {
   SAFE,
