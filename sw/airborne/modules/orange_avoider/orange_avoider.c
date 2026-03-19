@@ -57,7 +57,7 @@ static void opticflow_cb(uint8_t sender_id,
                          float divergence);
 
 static abi_event opticflow_ev;
-static uint32_t of_msg_cnt = 0;
+
 
 // Opticflow last values
 static float of_div_size = 0.f;     // last received div_size
