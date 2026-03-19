@@ -55,23 +55,50 @@ float of_noise = 1.f;        // start “bad” until a message arrives
 float of_div_thresh = 0.3f;  // tune later
 
 
-void opticflow_cb(uint8_t sender_id,
-                  uint32_t stamp,
-                  int flow_x,
-                  int flow_y,
-                  int flow_der_x,
-                  int flow_der_y,
-                  float quality,
-                  float divergence)
+// --- forward decls (add this near your other static prototypes) ---
+static void opticflow_cb(uint8_t sender_id,
+                         uint32_t stamp,
+                         int flow_x, int flow_y,
+                         int flow_der_x, int flow_der_y,
+                         float quality,
+                         float divergence);
+
+// ABI opticflow event + counters
+static abi_event opticflow_ev;
+static uint32_t of_msg_cnt = 0;
+
+// Opticflow last values
+static float of_div_size = 0.f;
+static float of_noise = 1.f;          // noise_measurement: lower is better (start "bad")
+static int   of_flow_x_last = 0;      // used for directional avoidance
+
+// Tunables (you can later move to airframe defines / GCS settings)
+static float of_noise_max  = 0.8f;    // consistent with opticflow_module.c gating
+static float of_div_thresh = 0.30f;   // divergence/div_size threshold
+
+static void opticflow_cb(uint8_t sender_id,
+                         uint32_t stamp,
+                         int flow_x,
+                         int flow_y,
+                         int flow_der_x,
+                         int flow_der_y,
+                         float quality,
+                         float divergence)
 {
   (void)sender_id; (void)stamp;
-  (void)flow_x;    (void)flow_y;
+  (void)flow_y;
   (void)flow_der_x; (void)flow_der_y;
 
   of_msg_cnt++;
+  of_flow_x_last = flow_x;
+
+  // NOTE: opticflow_module sends noise_measurement as "quality" field
   of_noise    = quality;
+
+  // NOTE: opticflow_module currently sends div_size as the last field
   of_div_size = divergence;
 }
+
 
 enum navigation_state_t {
   SAFE,
@@ -130,99 +157,100 @@ void orange_avoider_init(void)
  */
 void orange_avoider_periodic(void)
 {
-  // only evaluate our state machine if we are flying
-  if(!autopilot_in_flight()){
+  if (!autopilot_in_flight()) {
     return;
   }
 
-  // compute current color thresholds
-  int32_t color_count_threshold = oa_color_count_frac * front_camera.output_size.w * front_camera.output_size.h;
+  // ---- Color obstacle detection ----
+  int32_t color_count_threshold =
+      (int32_t)(oa_color_count_frac * front_camera.output_size.w * front_camera.output_size.h);
 
-  VERBOSE_PRINT("### NEW BUILD ### Color=%d thr=%d state=%d\n",
-              color_count, color_count_threshold, navigation_state);
-  
-              bool obstacle_detected_color = (color_count >= color_count_threshold);
+  bool obstacle_detected_color = (color_count >= color_count_threshold);
 
-  VERBOSE_PRINT("OF cnt=%lu noise=%f div=%f of_good=%d obs_of=%d\n",
-              (unsigned long)of_msg_cnt, of_noise, of_div_size, of_good, obstacle_detected_flow);
-
-  
-    // Tunables
-  static const float OF_NOISE_MAX  = 0.8f;  // consistent with opticflow_module.c
-  static const float OF_DIV_THRESH = 0.30f; // tune
-
-  bool have_of = (of_msg_cnt > 5);          // avoid using initial dummy values
-
-  bool of_good = have_of && (of_noise < OF_NOISE_MAX);        // noise_measurement: lower is better
-  bool obstacle_detected_flow = of_good && (fabsf(of_div_size) > OF_DIV_THRESH);
+  // ---- Opticflow obstacle detection (gated by quality/noise) ----
+  bool have_of   = (of_msg_cnt > 5);                 // ignore startup dummy values
+  bool of_good   = have_of && (of_noise < of_noise_max);
+  bool obstacle_detected_flow = of_good && (fabsf(of_div_size) > of_div_thresh);
 
   bool obstacle_detected = obstacle_detected_color || obstacle_detected_flow;
 
+  VERBOSE_PRINT("### NEW BUILD ### Color=%d thr=%d state=%d\n",
+                color_count, color_count_threshold, navigation_state);
 
+  VERBOSE_PRINT("OF cnt=%lu noise=%f div=%f of_good=%d obs_of=%d flow_x=%d\n",
+                (unsigned long)of_msg_cnt, of_noise, of_div_size,
+                of_good, obstacle_detected_flow, of_flow_x_last);
+
+  // ---- Confidence update ----
   if (!obstacle_detected) {
     obstacle_free_confidence++;
   } else {
-    obstacle_free_confidence -= 2;  // cautious on any obstacle detection
+    obstacle_free_confidence -= 2;
   }
 
-
-  // bound obstacle_free_confidence
   Bound(obstacle_free_confidence, 0, max_trajectory_confidence);
 
   float moveDistance = fminf(maxDistance, 0.2f * obstacle_free_confidence);
 
-  switch (navigation_state){
+  // ---- State machine ----
+  switch (navigation_state) {
+
     case SAFE:
-      // Move waypoint forward
       moveWaypointForward(WP_TRAJECTORY, 1.5f * moveDistance);
-      if (!InsideObstacleZone(WaypointX(WP_TRAJECTORY),WaypointY(WP_TRAJECTORY))){
+
+      if (!InsideObstacleZone(WaypointX(WP_TRAJECTORY), WaypointY(WP_TRAJECTORY))) {
         navigation_state = OUT_OF_BOUNDS;
-      } else if (obstacle_free_confidence == 0){
+
+      } else if (obstacle_free_confidence == 0) {
         navigation_state = OBSTACLE_FOUND;
+
       } else {
         moveWaypointForward(WP_GOAL, moveDistance);
       }
-
       break;
+
     case OBSTACLE_FOUND:
-      // stop
       waypoint_move_here_2d(WP_GOAL);
       waypoint_move_here_2d(WP_TRAJECTORY);
 
-      // randomly select new search direction
-      chooseRandomIncrementAvoidance();
+      // Direction choice:
+      // - If opticflow triggered, turn based on flow_x sign (turn away from dominant flow side)
+      // - Otherwise, fall back to random (color-only obstacle)
+      if (obstacle_detected_flow) {
+        heading_increment = (of_flow_x_last > 0) ? -5.f : 5.f;
+        VERBOSE_PRINT("OF-based avoidance: flow_x=%d -> heading_increment=%f\n",
+                      of_flow_x_last, heading_increment);
+      } else {
+        chooseRandomIncrementAvoidance();
+      }
 
       navigation_state = SEARCH_FOR_SAFE_HEADING;
-
       break;
+
     case SEARCH_FOR_SAFE_HEADING:
       increase_nav_heading(heading_increment);
 
-      // make sure we have a couple of good readings before declaring the way safe
-      if (obstacle_free_confidence >= 2){
+      if (obstacle_free_confidence >= 2) {
         navigation_state = SAFE;
       }
       break;
+
     case OUT_OF_BOUNDS:
       increase_nav_heading(heading_increment);
       moveWaypointForward(WP_TRAJECTORY, 1.5f);
 
-      if (InsideObstacleZone(WaypointX(WP_TRAJECTORY),WaypointY(WP_TRAJECTORY))){
-        // add offset to head back into arena
+      if (InsideObstacleZone(WaypointX(WP_TRAJECTORY), WaypointY(WP_TRAJECTORY))) {
         increase_nav_heading(heading_increment);
-
-        // reset safe counter
         obstacle_free_confidence = 0;
-
-        // ensure direction is safe before continuing
         navigation_state = SEARCH_FOR_SAFE_HEADING;
       }
       break;
+
     default:
       break;
   }
-  return;
 }
+
 
 /*
  * Increases the NAV heading. Assumes heading is an INT32_ANGLE. It is bound in this function.
