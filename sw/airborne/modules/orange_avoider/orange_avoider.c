@@ -143,10 +143,21 @@ void orange_avoider_periodic(void)
   
               bool obstacle_detected_color = (color_count >= color_count_threshold);
 
+  VERBOSE_PRINT("OF cnt=%lu noise=%f div=%f of_good=%d obs_of=%d\n",
+              (unsigned long)of_msg_cnt, of_noise, of_div_size, of_good, obstacle_detected_flow);
 
+  
+    // Tunables
+  static const float OF_NOISE_MAX  = 0.8f;  // consistent with opticflow_module.c
+  static const float OF_DIV_THRESH = 0.30f; // tune
 
-  bool obstacle_detected_flow = (of_noise > of_div_thresh);
+  bool have_of = (of_msg_cnt > 5);          // avoid using initial dummy values
+
+  bool of_good = have_of && (of_noise < OF_NOISE_MAX);        // noise_measurement: lower is better
+  bool obstacle_detected_flow = of_good && (fabsf(of_div_size) > OF_DIV_THRESH);
+
   bool obstacle_detected = obstacle_detected_color || obstacle_detected_flow;
+
 
   if (!obstacle_detected) {
     obstacle_free_confidence++;
