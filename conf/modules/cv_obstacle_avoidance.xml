@@ -1,0 +1,22 @@
+<!DOCTYPE module SYSTEM "module.dtd">
+<module name="cv_obstacle_avoidance">
+
+  <doc>
+    <description>
+      Optical flow obstacle avoidance with gate detection for Bebop 2.
+    </description>
+  </doc>
+
+  <header>
+    <file name="cv_obstacle_avoidance.h"/>
+  </header>
+
+  <init fun="cv_obstacle_avoidance_init()"/>
+  <periodic fun="cv_obstacle_avoidance_periodic()" freq="30"/>
+
+  <makefile target="ap|nps">
+    <file name="cv_obstacle_avoidance.c"/>
+    <define name="USE_COMPUTER_VISION"/>
+  </makefile>
+
+</module>
