@@ -63,6 +63,7 @@ static void opticflow_cb(uint8_t sender_id,
 static float of_div_size = 0.f;     // last received div_size
 static float of_noise    = 1.f;     // noise_measurement (lower is better), start "bad"
 static int   of_flow_x_last = 0;    // for directional turn
+static int of_flow_y_last = 0;
 
 // Proximity detection tuning
 static float of_div_filt = 0.f;
@@ -70,6 +71,7 @@ static uint8_t of_close_cnt = 0;
 
 static float of_noise_max   = 0.7f;   // stricter than 0.8
 static float of_div_thresh  = 0.06f;  // lower => detects earlier
+static float of_flow_mag_thresh = 250.f;   // tune (start ~250-400 in your sim)
 static float of_yawrate_max = 0.7f;   // rad/s (~40 deg/s)
 
 #define OF_CLOSE_N 2                  // need N consecutive "close" frames
@@ -90,6 +92,7 @@ static void opticflow_cb(uint8_t sender_id,
 
   of_msg_cnt++;
   of_flow_x_last = flow_x;
+  of_flow_y_last = flow_y;
 
   // opticflow_module sends noise_measurement in the "quality" field
   of_noise = quality;
@@ -171,7 +174,11 @@ void orange_avoider_periodic(void)
 
   // ignore opticflow-based proximity while yawing fast (rotation creates "fake" flow)
   float yaw_rate = stateGetBodyRates_f()->r;     // rad/s
-  bool not_turning_fast = fabsf(yaw_rate) < of_yawrate_max;
+  bool not_turning_fast = fabsf(yaw_rate) < 1.5f; // rad/s
+
+    // flow magnitude proxy (int values -> use float)
+  float flow_mag = sqrtf((float)of_flow_x_last * (float)of_flow_x_last +
+                        (float)of_flow_y_last * (float)of_flow_y_last);
 
 
   // simple low-pass filter on divergence (reduces jitter)
@@ -185,9 +192,12 @@ void orange_avoider_periodic(void)
   float vxy = sqrtf(v->x*v->x + v->y*v->y);
   bool translating = vxy > 0.15f;   // m/s
 
-  bool close_now = of_good && translating && (fabsf(of_div_filt) > of_div_thresh);
+  bool close_now =
+    of_good && not_turning_fast &&
+    (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
 
-  // debounce: require several consecutive "close" frames
+
+  // debounce
   if (close_now) {
     if (of_close_cnt < OF_CLOSE_N) { of_close_cnt++; }
   } else {
@@ -204,10 +214,12 @@ void orange_avoider_periodic(void)
 
   VERBOSE_PRINT("### NEW BUILD ### Color=%d thr=%d state=%d\n",
                 color_count, color_count_threshold, navigation_state);
+  
+  VERBOSE_PRINT("OF cnt=%lu noise=%f div=%f div_filt=%f of_good=%d flow=(%d,%d)\n",
+  (unsigned long)of_msg_cnt, of_noise, of_div_size, of_div_filt, of_good,
+  of_flow_x_last, of_flow_y_last, of_close_cnt, obstacle_detected_flow);
 
-  VERBOSE_PRINT("OF cnt=%lu noise=%f div=%f div_filt=%f of_good=%d close_cnt=%d obs_of=%d\n",
-    (unsigned long)of_msg_cnt, of_noise, of_div_size, of_div_filt,
-    of_good, of_close_cnt, obstacle_detected_flow);
+
   
     VERBOSE_PRINT("yaw_rate=%f rad/s\n", yaw_rate);
 
