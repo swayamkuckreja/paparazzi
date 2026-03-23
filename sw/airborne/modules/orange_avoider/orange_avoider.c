@@ -162,6 +162,11 @@ void orange_avoider_periodic(void)
     return;
   }
 
+  struct EnuCoor_f *vel = stateGetSpeedEnu_f();
+  float vxy = sqrtf(vel->x*vel->x + vel->y*vel->y);
+  bool translating = vxy > 0.15f;
+
+
   // ---- Color obstacle detection ----
   int32_t color_count_threshold =
       (int32_t)(oa_color_count_frac * front_camera.output_size.w * front_camera.output_size.h);
@@ -190,12 +195,11 @@ void orange_avoider_periodic(void)
   // --- translation gate (declare here, use later) ---
   struct EnuCoor_f *vel = stateGetSpeedEnu_f();
   float vxy = sqrtf(vel->x*vel->x + vel->y*vel->y);
-  bool translating = vxy > 0.15f;
 
-  bool close_now = of_good && translating &&
-  (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
+  bool close_now = of_good && translating && not_turning_fast &&
+    (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
 
-  // debounce
+    // debounce
   if (close_now) {
     if (of_close_cnt < OF_CLOSE_N) { of_close_cnt++; }
   } else {
