@@ -178,24 +178,22 @@ void orange_avoider_periodic(void)
 
     // flow magnitude proxy (int values -> use float)
   float flow_mag = sqrtf((float)of_flow_x_last * (float)of_flow_x_last +
-                        (float)of_flow_y_last * (float)of_flow_y_last);
-
+                       (float)of_flow_y_last * (float)of_flow_y_last);
 
   // simple low-pass filter on divergence (reduces jitter)
-  if (of_good && not_turning_fast) {
+  if (of_good && translating) {
     of_div_filt = 0.7f * of_div_filt + 0.3f * of_div_size;
   } else {
-    // decay toward 0 when not reliable
     of_div_filt *= 0.9f;
   }
-  struct EnuCoor_f *v = stateGetSpeedEnu_f();
-  float vxy = sqrtf(v->x*v->x + v->y*v->y);
-  bool translating = vxy > 0.15f;   // m/s
 
-  bool close_now =
-    of_good && not_turning_fast &&
-    (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
+  struct EnuCoor_f *vel = stateGetSpeedEnu_f();
+  float vxy = sqrtf(vel->x*vel->x + vel->y*vel->y);
+  bool translating = vxy > 0.15f; // m/s (tune 0.10..0.20)
 
+
+  bool close_now = of_good && translating &&
+  (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
 
   // debounce
   if (close_now) {
@@ -220,8 +218,9 @@ void orange_avoider_periodic(void)
   of_flow_x_last, of_flow_y_last, of_close_cnt, obstacle_detected_flow);
 
 
-  
-    VERBOSE_PRINT("yaw_rate=%f rad/s\n", yaw_rate);
+  VERBOSE_PRINT("vxy=%f translating=%d flow_mag=%f\n", vxy, translating, flow_mag);
+
+  VERBOSE_PRINT("yaw_rate=%f rad/s\n", yaw_rate);
 
 
 
