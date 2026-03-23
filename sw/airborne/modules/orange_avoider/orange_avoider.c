@@ -186,11 +186,11 @@ void orange_avoider_periodic(void)
   } else {
     of_div_filt *= 0.9f;
   }
-
+ 
+  // --- translation gate (declare here, use later) ---
   struct EnuCoor_f *vel = stateGetSpeedEnu_f();
   float vxy = sqrtf(vel->x*vel->x + vel->y*vel->y);
-  bool translating = vxy > 0.15f; // m/s (tune 0.10..0.20)
-
+  bool translating = vxy > 0.15f;
 
   bool close_now = of_good && translating &&
   (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
