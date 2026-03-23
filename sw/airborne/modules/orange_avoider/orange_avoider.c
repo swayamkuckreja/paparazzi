@@ -173,6 +173,7 @@ void orange_avoider_periodic(void)
   float yaw_rate = stateGetBodyRates_f()->r;     // rad/s
   bool not_turning_fast = fabsf(yaw_rate) < of_yawrate_max;
 
+
   // simple low-pass filter on divergence (reduces jitter)
   if (of_good && not_turning_fast) {
     of_div_filt = 0.7f * of_div_filt + 0.3f * of_div_size;
@@ -207,9 +208,10 @@ void orange_avoider_periodic(void)
   VERBOSE_PRINT("OF cnt=%lu noise=%f div=%f div_filt=%f of_good=%d close_cnt=%d obs_of=%d\n",
     (unsigned long)of_msg_cnt, of_noise, of_div_size, of_div_filt,
     of_good, of_close_cnt, obstacle_detected_flow);
+  
+    VERBOSE_PRINT("yaw_rate=%f rad/s\n", yaw_rate);
 
-  float yaw_rate = stateGetBodyRates_f()->r;
-  VERBOSE_PRINT("yaw_rate=%f rad/s\n", yaw_rate);
+
 
   // ---- Confidence update ----
   if (!obstacle_detected) {
