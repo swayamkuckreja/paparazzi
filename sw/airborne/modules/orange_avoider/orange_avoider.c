@@ -69,10 +69,10 @@ static float of_div_filt = 0.f;
 static uint8_t of_close_cnt = 0;
 
 static float of_noise_max   = 0.7f;   // stricter than 0.8
-static float of_div_thresh  = 0.20f;  // lower => detects earlier
+static float of_div_thresh  = 0.06f;  // lower => detects earlier
 static float of_yawrate_max = 0.7f;   // rad/s (~40 deg/s)
 
-#define OF_CLOSE_N 3                  // need N consecutive "close" frames
+#define OF_CLOSE_N 2                  // need N consecutive "close" frames
 
 
 static void opticflow_cb(uint8_t sender_id,
@@ -180,8 +180,11 @@ void orange_avoider_periodic(void)
     // decay toward 0 when not reliable
     of_div_filt *= 0.9f;
   }
+  struct EnuCoor_f *v = stateGetSpeedEnu_f();
+  float vxy = sqrtf(v->x*v->x + v->y*v->y);
+  bool translating = vxy > 0.15f;   // m/s
 
-  bool close_now = of_good && not_turning_fast && (fabsf(of_div_filt) > of_div_thresh);
+  bool close_now = of_good && translating && (fabsf(of_div_filt) > of_div_thresh);
 
   // debounce: require several consecutive "close" frames
   if (close_now) {
@@ -205,6 +208,8 @@ void orange_avoider_periodic(void)
     (unsigned long)of_msg_cnt, of_noise, of_div_size, of_div_filt,
     of_good, of_close_cnt, obstacle_detected_flow);
 
+  float yaw_rate = stateGetBodyRates_f()->r;
+  VERBOSE_PRINT("yaw_rate=%f rad/s\n", yaw_rate);
 
   // ---- Confidence update ----
   if (!obstacle_detected) {
