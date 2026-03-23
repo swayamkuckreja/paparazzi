@@ -56,7 +56,7 @@ static void opticflow_cb(uint8_t sender_id,
                          float quality,
                          float divergence);
 
-static abi_event opticflow_ev;
+
 
 
 // Opticflow last values
@@ -64,9 +64,16 @@ static float of_div_size = 0.f;     // last received div_size
 static float of_noise    = 1.f;     // noise_measurement (lower is better), start "bad"
 static int   of_flow_x_last = 0;    // for directional turn
 
-// Tunables (later can be moved to settings)
-static float of_noise_max  = 0.8f;
-static float of_div_thresh = 0.30f;
+// Proximity detection tuning
+static float of_div_filt = 0.f;
+static uint8_t of_close_cnt = 0;
+
+static float of_noise_max   = 0.7f;   // stricter than 0.8
+static float of_div_thresh  = 0.20f;  // lower => detects earlier
+static float of_yawrate_max = 0.7f;   // rad/s (~40 deg/s)
+
+#define OF_CLOSE_N 3                  // need N consecutive "close" frames
+
 
 static void opticflow_cb(uint8_t sender_id,
                          uint32_t stamp,
@@ -158,19 +165,46 @@ void orange_avoider_periodic(void)
 
   bool obstacle_detected_color = (color_count >= color_count_threshold);
 
-  // ---- Opticflow obstacle detection (gated by quality/noise) ----
-  bool have_of   = (of_msg_cnt > 5);                 // ignore startup dummy values
-  bool of_good   = have_of && (of_noise < of_noise_max);
-  bool obstacle_detected_flow = of_good && (fabsf(of_div_size) > of_div_thresh);
+  // ---- Opticflow obstacle detection (nearby obstacle proxy) ----
+  bool have_of = (of_msg_cnt > 5);
+  bool of_good = have_of && (of_noise < of_noise_max);
+
+  // ignore opticflow-based proximity while yawing fast (rotation creates "fake" flow)
+  float yaw_rate = stateGetBodyRates_f()->r;     // rad/s
+  bool not_turning_fast = fabsf(yaw_rate) < of_yawrate_max;
+
+  // simple low-pass filter on divergence (reduces jitter)
+  if (of_good && not_turning_fast) {
+    of_div_filt = 0.7f * of_div_filt + 0.3f * of_div_size;
+  } else {
+    // decay toward 0 when not reliable
+    of_div_filt *= 0.9f;
+  }
+
+  bool close_now = of_good && not_turning_fast && (fabsf(of_div_filt) > of_div_thresh);
+
+  // debounce: require several consecutive "close" frames
+  if (close_now) {
+    if (of_close_cnt < OF_CLOSE_N) { of_close_cnt++; }
+  } else {
+    of_close_cnt = 0;
+  }
+
+  bool obstacle_detected_flow = (of_close_cnt >= OF_CLOSE_N);
+
+
+
+
 
   bool obstacle_detected = obstacle_detected_color || obstacle_detected_flow;
 
   VERBOSE_PRINT("### NEW BUILD ### Color=%d thr=%d state=%d\n",
                 color_count, color_count_threshold, navigation_state);
 
-  VERBOSE_PRINT("OF cnt=%lu noise=%f div=%f of_good=%d obs_of=%d flow_x=%d\n",
-                (unsigned long)of_msg_cnt, of_noise, of_div_size,
-                of_good, obstacle_detected_flow, of_flow_x_last);
+  VERBOSE_PRINT("OF cnt=%lu noise=%f div=%f div_filt=%f of_good=%d close_cnt=%d obs_of=%d\n",
+    (unsigned long)of_msg_cnt, of_noise, of_div_size, of_div_filt,
+    of_good, of_close_cnt, obstacle_detected_flow);
+
 
   // ---- Confidence update ----
   if (!obstacle_detected) {
