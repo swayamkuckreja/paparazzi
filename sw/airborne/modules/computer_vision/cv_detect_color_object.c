@@ -79,9 +79,6 @@ bool cod_draw2 = false;
 
 // define global variables
 struct color_object_t {
-  int32_t x_c;
-  int32_t y_c;
-  uint32_t color_count;
   uint32_t roi_color_count;
   uint32_t roi_area;
   bool updated;
@@ -89,11 +86,11 @@ struct color_object_t {
 struct color_object_t global_filters[2];
 
 // Function
-uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc, bool draw,
-                              uint8_t lum_min, uint8_t lum_max,
-                              uint8_t cb_min, uint8_t cb_max,
-                              uint8_t cr_min, uint8_t cr_max,
-                              uint32_t *p_roi_color_count, uint32_t *p_roi_area);
+void color_object_filter(struct image_t *img, bool draw,
+                         uint8_t lum_min, uint8_t lum_max,
+                         uint8_t cb_min, uint8_t cb_max,
+                         uint8_t cr_min, uint8_t cr_max,
+                         uint32_t *p_roi_color_count, uint32_t *p_roi_area);
 
 /*
  * object_detector
@@ -131,23 +128,16 @@ static struct image_t *object_detector(struct image_t *img, uint8_t filter)
       return img;
   };
 
-  int32_t x_c, y_c;
-
-  // Filter and find centroid
+  // Filter
   uint32_t roi_color_count = 0;
   uint32_t roi_area = 0;
-  uint32_t count = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max,
-                                        &roi_color_count, &roi_area);
-  VERBOSE_PRINT("Color count f%d: %u, x_c %d, y_c %d, roi %u/%u\n", filter, count, x_c, y_c, roi_color_count, roi_area);
-  VERBOSE_PRINT("centroid f%d: (%d, %d) r: %4.2f a: %4.2f\n", filter, x_c, y_c,
-        hypotf(x_c, y_c) / hypotf(img->w * 0.5, img->h * 0.5), RadOfDeg(atan2f(y_c, x_c)));
+  color_object_filter(img, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max,
+                      &roi_color_count, &roi_area);
+  VERBOSE_PRINT("ROI %u/%u\n", filter, roi_color_count, roi_area);
 
   pthread_mutex_lock(&mutex);
-  global_filters[filter-1].color_count = count;
   global_filters[filter-1].roi_color_count = roi_color_count;
   global_filters[filter-1].roi_area = roi_area;
-  global_filters[filter-1].x_c = x_c;
-  global_filters[filter-1].y_c = y_c;
   global_filters[filter-1].updated = true;
   pthread_mutex_unlock(&mutex);
 
@@ -204,14 +194,11 @@ void color_object_detector_init(void)
 }
 
 /*
- * find_object_centroid
+ * color_object_filter
  *
- * Finds the centroid of pixels in an image within filter bounds.
- * Also returns the amount of pixels that satisfy these filter bounds.
+ * Finds the amount of pixels in an image within filter bounds.
  *
  * @param img - input image to process formatted as YUV422.
- * @param p_xc - x coordinate of the centroid of color object
- * @param p_yc - y coordinate of the centroid of color object
  * @param lum_min - minimum y value for the filter in YCbCr colorspace
  * @param lum_max - maximum y value for the filter in YCbCr colorspace
  * @param cb_min - minimum cb value for the filter in YCbCr colorspace
@@ -221,15 +208,12 @@ void color_object_detector_init(void)
  * @param draw - whether or not to draw on image
  * @return number of pixels of image within the filter bounds.
  */
-uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc, bool draw,
-                              uint8_t lum_min, uint8_t lum_max,
-                              uint8_t cb_min, uint8_t cb_max,
-                              uint8_t cr_min, uint8_t cr_max,
-                              uint32_t *p_roi_color_count, uint32_t *p_roi_area)
+void color_object_filter(struct image_t *img, bool draw,
+                         uint8_t lum_min, uint8_t lum_max,
+                         uint8_t cb_min, uint8_t cb_max,
+                         uint8_t cr_min, uint8_t cr_max,
+                         uint32_t *p_roi_color_count, uint32_t *p_roi_area)
 {
-  uint32_t cnt = 0;
-  uint32_t tot_x = 0;
-  uint32_t tot_y = 0;
   uint8_t *buffer = img->buf;
 
   uint16_t roi_w = (uint16_t)(img->w * COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC);
@@ -284,9 +268,6 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
       if ( (*yp >= lum_min) && (*yp <= lum_max) &&
            (*up >= cb_min ) && (*up <= cb_max ) &&
            (*vp >= cr_min ) && (*vp <= cr_max )) {
-        cnt ++;
-        tot_x += x;
-        tot_y += y;
         if (y >= roi_y_min && y < roi_y_max && x <= roi_x_max) {
           roi_color_count++;
         }
@@ -296,13 +277,6 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
       }
     }
   }
-  if (cnt > 0) {
-    *p_xc = (int32_t)roundf(tot_x / ((float) cnt) - img->w * 0.5f);
-    *p_yc = (int32_t)roundf(img->h * 0.5f - tot_y / ((float) cnt));
-  } else {
-    *p_xc = 0;
-    *p_yc = 0;
-  }
 
   if (p_roi_color_count != NULL) {
     *p_roi_color_count = roi_color_count;
@@ -310,8 +284,6 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
   if (p_roi_area != NULL) {
     *p_roi_area = (uint32_t)roi_w * (uint32_t)roi_h;
   }
-
-  return cnt;
 }
 
 void color_object_detector_periodic(void)
@@ -324,15 +296,15 @@ void color_object_detector_periodic(void)
   if(local_filters[0].updated){
     int16_t roi_count = (int16_t)Min(local_filters[0].roi_color_count, (uint32_t)INT16_MAX);
     int16_t roi_area = (int16_t)Min(local_filters[0].roi_area, (uint32_t)INT16_MAX);
-    AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION1_ID, local_filters[0].x_c, local_filters[0].y_c,
-        roi_count, roi_area, local_filters[0].color_count, 0);
+    AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION1_ID, 0, 0,
+        roi_count, roi_area, roi_count, 0);
     local_filters[0].updated = false;
   }
   if(local_filters[1].updated){
     int16_t roi_count = (int16_t)Min(local_filters[1].roi_color_count, (uint32_t)INT16_MAX);
     int16_t roi_area = (int16_t)Min(local_filters[1].roi_area, (uint32_t)INT16_MAX);
-    AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION2_ID, local_filters[1].x_c, local_filters[1].y_c,
-        roi_count, roi_area, local_filters[1].color_count, 1);
+    AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION2_ID, 0, 0,
+        roi_count, roi_area, roi_count, 1);
     local_filters[1].updated = false;
   }
 }

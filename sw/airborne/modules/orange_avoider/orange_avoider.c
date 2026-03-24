@@ -60,14 +60,12 @@ enum navigation_state_t {
 };
 
 // define settings
-float oa_color_count_frac = 0.18f;
 float oa_green_roi_frac_threshold = OA_GREEN_ROI_FRAC_THRESHOLD;
 float oa_search_yaw_increment_deg = OA_SEARCH_YAW_INCREMENT_DEG;
 float oa_forward_step_m = OA_FORWARD_STEP_M;
 
 // define and initialise global variables
 enum navigation_state_t navigation_state = SEARCH_FOR_SAFE_HEADING;
-int32_t color_count = 0;
 int16_t roi_color_count = 0;
 int16_t roi_area = 0;
 float heading_increment = 10.f;
@@ -86,9 +84,8 @@ static abi_event color_detection_ev;
 static void color_detection_cb(uint8_t __attribute__((unused)) sender_id,
                                int16_t __attribute__((unused)) pixel_x, int16_t __attribute__((unused)) pixel_y,
                                int16_t pixel_width, int16_t pixel_height,
-                               int32_t quality, int16_t __attribute__((unused)) extra)
+                               int32_t __attribute__((unused)) quality, int16_t __attribute__((unused)) extra)
 {
-  color_count = quality;
   roi_color_count = pixel_width;
   roi_area = pixel_height;
 }
@@ -121,8 +118,8 @@ void orange_avoider_periodic(void)
     roi_green_frac = (float)roi_color_count / (float)roi_area;
   }
 
-  VERBOSE_PRINT("Color_count: %d ROI: %d/%d (%0.2f) threshold: %0.2f state: %d\n",
-                color_count, roi_color_count, roi_area, roi_green_frac,
+  VERBOSE_PRINT("ROI: %d/%d (%0.2f) threshold: %0.2f state: %d\n",
+                roi_color_count, roi_area, roi_green_frac,
                 oa_green_roi_frac_threshold, navigation_state);
 
   switch (navigation_state){
