@@ -72,7 +72,7 @@ static uint8_t of_close_cnt = 0;
 static float of_noise_max   = 0.7f;   // stricter than 0.8
 static float of_div_thresh  = 0.06f;  // lower => detects earlier
 static float of_flow_mag_thresh = 250.f;   // tune (start ~250-400 in your sim)
-static float of_yawrate_max = 0.7f;   // rad/s (~40 deg/s)
+// static float of_yawrate_max = 0.7f;   // rad/s (~40 deg/s)
 
 #define OF_CLOSE_N 2                  // need N consecutive "close" frames
 
@@ -179,7 +179,7 @@ void orange_avoider_periodic(void)
 
   // ignore opticflow-based proximity while yawing fast (rotation creates "fake" flow)
   float yaw_rate = stateGetBodyRates_f()->r;     // rad/s
-  bool not_turning_fast = fabsf(yaw_rate) < 1.5f; // rad/s
+  // bool not_turning_fast = fabsf(yaw_rate) < 1.5f; // rad/s
 
   // flow magnitude proxy (int values -> use float)
   float flow_mag = sqrtf((float)of_flow_x_last * (float)of_flow_x_last +
@@ -196,9 +196,10 @@ void orange_avoider_periodic(void)
   struct EnuCoor_f *vel = stateGetSpeedEnu_f();
   float vxy = sqrtf(vel->x*vel->x + vel->y*vel->y);
 
-  bool close_now = of_good && translating && not_turning_fast && (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);    
+  bool close_now = of_good && (vxy > 0.15f) &&
+    (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);  
   
-  // debounce
+    // debounce
   if (close_now) {
     if (of_close_cnt < OF_CLOSE_N) { of_close_cnt++; }
   } else {
