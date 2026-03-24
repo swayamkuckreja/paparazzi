@@ -81,6 +81,8 @@ bool cod_draw2 = false;
 struct color_object_t {
   uint32_t roi_color_count;
   uint32_t roi_area;
+  uint32_t roi2_count;
+  uint32_t roi2_area;
   bool updated;
 };
 struct color_object_t global_filters[2];
@@ -218,11 +220,19 @@ void color_object_filter(struct image_t *img, bool draw,
 
   uint16_t roi_w = (uint16_t)(img->w * COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC);
   uint16_t roi_h = (uint16_t)(img->h * COLOR_OBJECT_DETECTOR_ROI_HEIGHT_FRAC);
+  uint16_t roi2_w = (uint16_t)(img->w * COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC); // for now I keep the same size of top ROI as bottom ROI
+  uint16_t roi2_h = (uint16_t)(img->h * COLOR_OBJECT_DETECTOR_ROI_HEIGHT_FRAC); // TODO: make this configurable 
   if (roi_w == 0) {
     roi_w = 1;
   }
   if (roi_h == 0) {
     roi_h = 1;
+  }
+  if (roi2_w == 0) { // added these fail safes for roi2 as well
+    roi2_w = 1;
+  }
+  if (roi2_h == 0) {
+    roi2_h = 1;
   }
   if (roi_w > img->w) {
     roi_w = img->w;
@@ -230,21 +240,41 @@ void color_object_filter(struct image_t *img, bool draw,
   if (roi_h > img->h) {
     roi_h = img->h;
   }
+  if (roi2_w > img->w) {
+    roi2_w = img->w;
+  }
+  if (roi2_h > img->h) {
+    roi2_h = img->h;
+  }
+  // bounds for roi(1) - bottom center of image used for ground carpet scanning
   uint16_t roi_y_min = (img->h - roi_h) / 2;
   uint16_t roi_y_max = roi_y_min + roi_h;
   uint16_t roi_x_max = roi_w;
   uint32_t roi_color_count = 0;
+  // bounds for roi2 - top center of image used for trees
+  uint16_t roi2_y_min = (img->h - roi2_h) / 2;
+  uint16_t roi2_y_max = roi2_y_min + roi2_h;
+  uint16_t roi2_x_min = img->w - roi2_w;
+  uint32_t roi2_color_count = 0;
 
   if (draw) {
     struct point_t from;
     struct point_t to;
     uint8_t roi_line_color[4] = {90, 255, 240, 255};
 
+    // a guide line to show roi(1)
     from.x = roi_x_max;
     from.y = roi_y_min;
     to.x = roi_x_max;
     to.y = roi_y_max - 1;
     image_draw_line_color(img, &from, &to, roi_line_color);
+
+    // a guide line to show roi2
+    from2.x = roi2_x_min;
+    from2.y = roi2_y_min;
+    to2.x = roi2_x_min;
+    to2.y = roi2_y_max - 1;
+    image_draw_line_color(img, &from2, &to2, roi_line_color);
   }
 
   // Go through all the pixels
@@ -271,6 +301,9 @@ void color_object_filter(struct image_t *img, bool draw,
         if (y >= roi_y_min && y < roi_y_max && x <= roi_x_max) {
           roi_color_count++;
         }
+        if (y >= roi2_y_min && y < roi2_y_max && x >= roi2_x_min) {
+          roi2_color_count++;
+        }
         if (draw){
           *yp = 255;  // make pixel brighter in image
         }
@@ -281,8 +314,14 @@ void color_object_filter(struct image_t *img, bool draw,
   if (p_roi_color_count != NULL) {
     *p_roi_color_count = roi_color_count;
   }
+  if (p_roi2_color_count != NULL) {
+    *p_roi2_color_count = roi2_color_count;
+  }
   if (p_roi_area != NULL) {
     *p_roi_area = (uint32_t)roi_w * (uint32_t)roi_h;
+  }
+  if (p_roi2_area != NULL) {
+    *p_roi2_area = (uint32_t)roi2_w * (uint32_t)roi2_h;
   }
 }
 
@@ -296,15 +335,19 @@ void color_object_detector_periodic(void)
   if(local_filters[0].updated){
     int16_t roi_count = (int16_t)Min(local_filters[0].roi_color_count, (uint32_t)INT16_MAX);
     int16_t roi_area = (int16_t)Min(local_filters[0].roi_area, (uint32_t)INT16_MAX);
+    int16_t roi2_count = (int16_t)Min(local_filters[0].roi2_color_count, (uint32_t)INT16_MAX);
+    int16_t roi2_area = (int16_t)Min(local_filters[0].roi2_area, (uint32_t)INT16_MAX);
     AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION1_ID, 0, 0,
-        roi_count, roi_area, 0, 0);
+        roi_count, roi_area, roi2_count, roi2_area);
     local_filters[0].updated = false;
   }
   if(local_filters[1].updated){
     int16_t roi_count = (int16_t)Min(local_filters[1].roi_color_count, (uint32_t)INT16_MAX);
     int16_t roi_area = (int16_t)Min(local_filters[1].roi_area, (uint32_t)INT16_MAX);
+    int16_t roi2_count = (int16_t)Min(local_filters[1].roi2_color_count, (uint32_t)INT16_MAX);
+    int16_t roi2_area = (int16_t)Min(local_filters[1].roi2_area, (uint32_t)INT16_MAX);
     AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION2_ID, 0, 0,
-        roi_count, roi_area, 0, 1);
+        roi_count, roi_area, roi2_count, roi2_area);
     local_filters[1].updated = false;
   }
 }
