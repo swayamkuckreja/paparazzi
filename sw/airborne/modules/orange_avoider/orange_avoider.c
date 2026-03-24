@@ -54,6 +54,7 @@ static uint32_t of_msg_cnt = 0;
 static pthread_mutex_t oa_vis_mutex;
 static float oa_prox01 = 0.f;  // 0..1 proximity value for visualization
 static struct video_listener *oa_vis_listener = NULL;
+static struct image_t *orange_avoider_vis_cb(struct image_t *img);
 
 
 static void opticflow_cb(uint8_t sender_id,
@@ -355,7 +356,8 @@ static struct image_t *orange_avoider_vis_cb(struct image_t *img)
   for (int y = 0; y < img->h; y++) {
     for (int x = 0; x < bar_w; x++) {
       // pointer to 2-pixel group
-      uint8_t *p = img->buf + y * img->w * 2 + (x / 2) * 4; // U Y0 V Y1
+      uint8_t *buf = (uint8_t *)img->buf;
+      uint8_t *p = buf + y * img->w * 2 + (x / 2) * 4; // U Y0 V Y1
       p[0] = U;
       p[2] = V;
       if ((x & 1) == 0) {
