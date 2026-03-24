@@ -191,15 +191,11 @@ void orange_avoider_periodic(void)
   } else {
     of_div_filt *= 0.9f;
   }
- 
-  // --- translation gate (declare here, use later) ---
-  struct EnuCoor_f *vel = stateGetSpeedEnu_f();
-  float vxy = sqrtf(vel->x*vel->x + vel->y*vel->y);
 
-  bool close_now = of_good && (vxy > 0.15f) &&
-    (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);  
-  
-    // debounce
+  bool close_now = of_good && translating &&
+  (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
+    
+  // debounce
   if (close_now) {
     if (of_close_cnt < OF_CLOSE_N) { of_close_cnt++; }
   } else {
@@ -217,10 +213,9 @@ void orange_avoider_periodic(void)
   VERBOSE_PRINT("### NEW BUILD ### Color=%d thr=%d state=%d\n",
                 color_count, color_count_threshold, navigation_state);
   
-  VERBOSE_PRINT("OF cnt=%lu noise=%f div=%f div_filt=%f of_good=%d flow=(%d,%d)\n",
-  (unsigned long)of_msg_cnt, of_noise, of_div_size, of_div_filt, of_good,
-  of_flow_x_last, of_flow_y_last, of_close_cnt, obstacle_detected_flow);
-
+  VERBOSE_PRINT("OF cnt=%lu noise=%f div=%f div_filt=%f of_good=%d flow=(%d,%d) close_cnt=%d obs_of=%d\n",
+    (unsigned long)of_msg_cnt, of_noise, of_div_size, of_div_filt, of_good,
+    of_flow_x_last, of_flow_y_last, of_close_cnt, obstacle_detected_flow);
 
   VERBOSE_PRINT("vxy=%f translating=%d flow_mag=%f\n", vxy, translating, flow_mag);
 
