@@ -71,7 +71,7 @@ static uint8_t of_close_cnt = 0;
 
 static float of_noise_max   = 0.7f;   // stricter than 0.8
 static float of_div_thresh  = 0.06f;  // lower => detects earlier
-static float of_flow_mag_thresh = 250.f;   // tune (start ~250-400 in your sim)
+static float of_flow_mag_thresh = 600.f;   // tune (start ~250-400 in your sim)
 // static float of_yawrate_max = 0.7f;   // rad/s (~40 deg/s)
 
 #define OF_CLOSE_N 2                  // need N consecutive "close" frames
@@ -254,6 +254,9 @@ void orange_avoider_periodic(void)
     case OBSTACLE_FOUND:
       waypoint_move_here_2d(WP_GOAL);
       waypoint_move_here_2d(WP_TRAJECTORY);
+      // back up a bit to create distance to obstacle
+      moveWaypointForward(WP_GOAL,      -0.6f);
+      moveWaypointForward(WP_TRAJECTORY, -0.6f);
 
       // Direction choice:
       // - If opticflow triggered, turn based on flow_x sign (turn away from dominant flow side)
