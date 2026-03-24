@@ -68,6 +68,8 @@ float oa_forward_step_m = OA_FORWARD_STEP_M;
 enum navigation_state_t navigation_state = SEARCH_FOR_SAFE_HEADING;
 int16_t roi_color_count = 0;
 int16_t roi_area = 0;
+int16_t roi2_color_count = 0;
+int16_t roi2_area = 0;
 float heading_increment = 10.f;
 
 /*
@@ -84,10 +86,12 @@ static abi_event color_detection_ev;
 static void color_detection_cb(uint8_t __attribute__((unused)) sender_id,
                                int16_t __attribute__((unused)) pixel_x, int16_t __attribute__((unused)) pixel_y,
                                int16_t pixel_width, int16_t pixel_height,
-                               int32_t __attribute__((unused)) quality, int16_t __attribute__((unused)) extra)
+                               int16_t quality, int16_t extra)
 {
   roi_color_count = pixel_width;
   roi_area = pixel_height;
+  roi2_color_count = quality;
+  roi2_area = extra;
 }
 
 /*
@@ -114,17 +118,30 @@ void orange_avoider_periodic(void)
   heading_increment = oa_search_yaw_increment_deg;
 
   float roi_green_frac = 0.f;
+  float roi2_frac = 0.f;
   if (roi_area > 0) {
     roi_green_frac = (float)roi_color_count / (float)roi_area;
   }
+  if (roi2_area > 0) {
+    roi2_frac = (float)roi2_color_count / (float)roi2_area;
+  }
 
-  VERBOSE_PRINT("ROI: %d/%d (%0.2f) threshold: %0.2f state: %d\n",
+  VERBOSE_PRINT("ROI: %d/%d (%0.2f) ROI2: %d/%d (%0.2f) threshold: %0.2f state: %d\n",
                 roi_color_count, roi_area, roi_green_frac,
+                roi2_color_count, roi2_area, roi2_frac,
                 oa_green_roi_frac_threshold, navigation_state);
+
+  // Tree avoidance: if roi2_frac > 0.3, treat as obstacle
+  const float ROI2_TREE_THRESHOLD = 0.35f; // THIS IS THE TREE DETECTION THRESHOLD, YOU CAN TUNE THIS 
+  bool tree_detected = (roi2_frac > ROI2_TREE_THRESHOLD);
 
   switch (navigation_state){
     case SAFE:
-      if (roi_green_frac >= oa_green_roi_frac_threshold) {
+      if (tree_detected) {
+        waypoint_move_here_2d(WP_GOAL);
+        waypoint_move_here_2d(WP_TRAJECTORY);
+        navigation_state = SEARCH_FOR_SAFE_HEADING;
+      } else if (roi_green_frac >= oa_green_roi_frac_threshold) {
         moveWaypointForward(WP_TRAJECTORY, oa_forward_step_m);
         moveWaypointForward(WP_GOAL, oa_forward_step_m);
       } else {
@@ -142,7 +159,7 @@ void orange_avoider_periodic(void)
     case SEARCH_FOR_SAFE_HEADING:
       waypoint_move_here_2d(WP_GOAL);
       waypoint_move_here_2d(WP_TRAJECTORY);
-      if (roi_green_frac >= oa_green_roi_frac_threshold) {
+      if (!tree_detected && roi_green_frac >= oa_green_roi_frac_threshold) {
         navigation_state = SAFE;
       } else {
         increase_nav_heading(heading_increment);
