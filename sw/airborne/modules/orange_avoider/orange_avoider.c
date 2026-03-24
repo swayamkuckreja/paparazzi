@@ -173,12 +173,10 @@ void orange_avoider_periodic(void)
 
   bool obstacle_detected_color = (color_count >= color_count_threshold);
 
-  // ---- Opticflow obstacle detection (nearby obstacle proxy) ----
-  bool have_of = (of_msg_cnt > 5);
-  bool of_good = have_of && (of_noise < of_noise_max);
+  
 
-  // ignore opticflow-based proximity while yawing fast (rotation creates "fake" flow)
-  // ---- Opticflow obstacle detection (nearby obstacle proxy) ----
+
+    // ---- Opticflow obstacle detection (nearby obstacle proxy) ----
   bool have_of = (of_msg_cnt > 5);
   bool of_good = have_of && (of_noise < of_noise_max);
 
