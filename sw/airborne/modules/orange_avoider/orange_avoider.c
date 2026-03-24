@@ -187,7 +187,7 @@ void orange_avoider_periodic(void)
 
   bool close_hard = not_turning_fast && (flow_mag > 1200.f); // override when almost stopped but flow explodes
 
-  bool close_now = of_good && (close_soft || close_hard);
+  // bool close_now = of_good && (close_soft || close_hard);
 
   // flow magnitude proxy (int values -> use float)
   float flow_mag = sqrtf((float)of_flow_x_last * (float)of_flow_x_last +
