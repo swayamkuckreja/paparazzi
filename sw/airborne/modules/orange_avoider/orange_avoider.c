@@ -164,7 +164,7 @@ void orange_avoider_periodic(void)
 
   struct EnuCoor_f *vel = stateGetSpeedEnu_f();
   float vxy = sqrtf(vel->x*vel->x + vel->y*vel->y);
-  bool translating = vxy > 0.15f;
+  bool translating = vxy > 0.05f;
 
 
   // ---- Color obstacle detection ----
@@ -179,7 +179,15 @@ void orange_avoider_periodic(void)
 
   // ignore opticflow-based proximity while yawing fast (rotation creates "fake" flow)
   float yaw_rate = stateGetBodyRates_f()->r;     // rad/s
-  // bool not_turning_fast = fabsf(yaw_rate) < 1.5f; // rad/s
+  
+  bool not_turning_fast = fabsf(yaw_rate) < 0.4f;     // rad/s
+
+  bool close_soft = translating &&
+    (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
+
+  bool close_hard = not_turning_fast && (flow_mag > 1200.f); // override when almost stopped but flow explodes
+
+  bool close_now = of_good && (close_soft || close_hard);
 
   // flow magnitude proxy (int values -> use float)
   float flow_mag = sqrtf((float)of_flow_x_last * (float)of_flow_x_last +
@@ -192,8 +200,8 @@ void orange_avoider_periodic(void)
     of_div_filt *= 0.9f;
   }
 
-  bool close_now = of_good && translating &&
-  (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
+  // bool close_now = of_good && translating &&
+  // (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
     
   // debounce
   if (close_now) {
@@ -283,6 +291,12 @@ void orange_avoider_periodic(void)
     case OUT_OF_BOUNDS:
       increase_nav_heading(heading_increment);
       moveWaypointForward(WP_TRAJECTORY, 1.5f);
+
+      if (obstacle_detected_flow) {
+        navigation_state = OBSTACLE_FOUND;
+        obstacle_free_confidence = 0;
+        break;
+      }
 
       if (InsideObstacleZone(WaypointX(WP_TRAJECTORY), WaypointY(WP_TRAJECTORY))) {
         increase_nav_heading(heading_increment);
