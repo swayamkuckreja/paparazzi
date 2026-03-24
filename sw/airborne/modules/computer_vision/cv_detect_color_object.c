@@ -297,14 +297,14 @@ void color_object_detector_periodic(void)
     int16_t roi_count = (int16_t)Min(local_filters[0].roi_color_count, (uint32_t)INT16_MAX);
     int16_t roi_area = (int16_t)Min(local_filters[0].roi_area, (uint32_t)INT16_MAX);
     AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION1_ID, 0, 0,
-        roi_count, roi_area, roi_count, 0);
+        roi_count, roi_area, 0, 0);
     local_filters[0].updated = false;
   }
   if(local_filters[1].updated){
     int16_t roi_count = (int16_t)Min(local_filters[1].roi_color_count, (uint32_t)INT16_MAX);
     int16_t roi_area = (int16_t)Min(local_filters[1].roi_area, (uint32_t)INT16_MAX);
     AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION2_ID, 0, 0,
-        roi_count, roi_area, roi_count, 1);
+        roi_count, roi_area, 0, 1);
     local_filters[1].updated = false;
   }
 }
