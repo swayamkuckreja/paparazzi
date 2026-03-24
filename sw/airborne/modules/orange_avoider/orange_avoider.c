@@ -181,7 +181,7 @@ void orange_avoider_periodic(void)
   float yaw_rate = stateGetBodyRates_f()->r;     // rad/s
   bool not_turning_fast = fabsf(yaw_rate) < 1.5f; // rad/s
 
-    // flow magnitude proxy (int values -> use float)
+  // flow magnitude proxy (int values -> use float)
   float flow_mag = sqrtf((float)of_flow_x_last * (float)of_flow_x_last +
                        (float)of_flow_y_last * (float)of_flow_y_last);
 
@@ -196,10 +196,9 @@ void orange_avoider_periodic(void)
   struct EnuCoor_f *vel = stateGetSpeedEnu_f();
   float vxy = sqrtf(vel->x*vel->x + vel->y*vel->y);
 
-  bool close_now = of_good && translating && not_turning_fast &&
-    (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
-
-    // debounce
+  bool close_now = of_good && translating && not_turning_fast && (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);    
+  
+  // debounce
   if (close_now) {
     if (of_close_cnt < OF_CLOSE_N) { of_close_cnt++; }
   } else {
