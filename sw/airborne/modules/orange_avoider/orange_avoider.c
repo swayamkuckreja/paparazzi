@@ -54,6 +54,7 @@ static uint32_t of_msg_cnt = 0;
 static pthread_mutex_t oa_vis_mutex;
 static float oa_prox01 = 0.f;  // 0..1 proximity value for visualization
 static struct video_listener *oa_vis_listener = NULL;
+
 static struct image_t *orange_avoider_vis_cb(struct image_t *img);
 
 
@@ -152,20 +153,16 @@ static void color_detection_cb(uint8_t __attribute__((unused)) sender_id,
  */
 void orange_avoider_init(void)
 {
-  // Initialise random values
   srand(time(NULL));
   chooseRandomIncrementAvoidance();
 
-  // bind our colorfilter callbacks to receive the color filter outputs
   AbiBindMsgVISUAL_DETECTION(ORANGE_AVOIDER_VISUAL_DETECTION_ID, &color_detection_ev, color_detection_cb);
   AbiBindMsgOPTICAL_FLOW(ABI_BROADCAST, &opticflow_ev, opticflow_cb);
-  
-  // register at 10 FPS so it’s light
-  oa_vis_listener = cv_add_to_device(&front_camera, orange_avoider_vis_cb, 10);
-  pthread_mutex_init(&oa_vis_mutex, NULL);
 
-  
+  pthread_mutex_init(&oa_vis_mutex, NULL);
+  oa_vis_listener = cv_add_to_device(&front_camera, orange_avoider_vis_cb, 10, 0);
 }
+
 
 /*
  * Function that checks it is safe to move forwards, and then moves a waypoint forward or changes the heading
@@ -338,7 +335,6 @@ void orange_avoider_periodic(void)
 }
 
 
-static struct image_t *orange_avoider_vis_cb(struct image_t *img)
 {
   float prox;
   pthread_mutex_lock(&oa_vis_mutex);
