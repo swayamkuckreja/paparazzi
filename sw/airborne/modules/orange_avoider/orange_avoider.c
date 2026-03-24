@@ -26,7 +26,9 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <math.h>
-
+#include "modules/computer_vision/cv.h"
+#include "modules/computer_vision/lib/vision/image.h"
+#include <pthread.h>
 
 
 
@@ -48,6 +50,11 @@ static uint8_t increase_nav_heading(float incrementDegrees);
 static uint8_t chooseRandomIncrementAvoidance(void);
 static abi_event opticflow_ev;
 static uint32_t of_msg_cnt = 0;
+
+static pthread_mutex_t oa_vis_mutex;
+static float oa_prox01 = 0.f;  // 0..1 proximity value for visualization
+static struct video_listener *oa_vis_listener = NULL;
+
 
 static void opticflow_cb(uint8_t sender_id,
                          uint32_t stamp,
@@ -71,7 +78,7 @@ static uint8_t of_close_cnt = 0;
 
 static float of_noise_max   = 0.7f;   // stricter than 0.8
 static float of_div_thresh  = 0.06f;  // lower => detects earlier
-static float of_flow_mag_thresh = 500.f;   // tune (start ~250-400 in your sim)
+static float of_flow_mag_thresh = 600.f;   // tune (start ~250-400 in your sim)
 // static float of_yawrate_max = 0.7f;   // rad/s (~40 deg/s)
 
 #define OF_CLOSE_N 2                  // need N consecutive "close" frames
@@ -151,6 +158,11 @@ void orange_avoider_init(void)
   // bind our colorfilter callbacks to receive the color filter outputs
   AbiBindMsgVISUAL_DETECTION(ORANGE_AVOIDER_VISUAL_DETECTION_ID, &color_detection_ev, color_detection_cb);
   AbiBindMsgOPTICAL_FLOW(ABI_BROADCAST, &opticflow_ev, opticflow_cb);
+
+  pthread_mutex_init(&oa_vis_mutex, NULL);
+
+  // register at 10 FPS so it’s light
+  oa_vis_listener = cv_add_to_device(&front_camera, orange_avoider_vis_cb, 10);
 }
 
 /*
@@ -242,6 +254,18 @@ void orange_avoider_periodic(void)
 
   float moveDistance = fminf(maxDistance, 0.2f * obstacle_free_confidence);
 
+  // Map flow_mag to 0..1 for visualization (tune these two numbers)
+  const float FLOW_MIN = 100.f;   // "far"
+  const float FLOW_MAX = 2000.f;  // "very close"
+  float prox = (flow_mag - FLOW_MIN) / (FLOW_MAX - FLOW_MIN);
+  if (prox < 0.f) prox = 0.f;
+  if (prox > 1.f) prox = 1.f;
+
+  pthread_mutex_lock(&oa_vis_mutex);
+  oa_prox01 = of_good ? prox : 0.f;
+  pthread_mutex_unlock(&oa_vis_mutex);
+
+
   // ---- State machine ----
   switch (navigation_state) {
 
@@ -310,6 +334,39 @@ void orange_avoider_periodic(void)
       break;
   }
 }
+
+
+static struct image_t *orange_avoider_vis_cb(struct image_t *img)
+{
+  float prox;
+  pthread_mutex_lock(&oa_vis_mutex);
+  prox = oa_prox01;
+  pthread_mutex_unlock(&oa_vis_mutex);
+
+  // draw a left-side vertical bar (grayscale)
+  // UYVY (YUV422): keep chroma neutral (U=V=128), vary Y
+  const uint8_t U = 128, V = 128;
+  uint8_t Y = (uint8_t)(30 + prox * 200);  // 30..230
+
+  int bar_w = 12;
+  if (bar_w > img->w) bar_w = img->w;
+
+  for (int y = 0; y < img->h; y++) {
+    for (int x = 0; x < bar_w; x++) {
+      // pointer to 2-pixel group
+      uint8_t *p = img->buf + y * img->w * 2 + (x / 2) * 4; // U Y0 V Y1
+      p[0] = U;
+      p[2] = V;
+      if ((x & 1) == 0) {
+        p[1] = Y;  // Y0
+      } else {
+        p[3] = Y;  // Y1
+      }
+    }
+  }
+  return img;
+}
+
 
 
 /*
