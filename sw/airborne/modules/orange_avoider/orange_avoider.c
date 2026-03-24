@@ -178,31 +178,33 @@ void orange_avoider_periodic(void)
   bool of_good = have_of && (of_noise < of_noise_max);
 
   // ignore opticflow-based proximity while yawing fast (rotation creates "fake" flow)
-  float yaw_rate = stateGetBodyRates_f()->r;     // rad/s
-  
-  bool not_turning_fast = fabsf(yaw_rate) < 0.4f;     // rad/s
+  // ---- Opticflow obstacle detection (nearby obstacle proxy) ----
+  bool have_of = (of_msg_cnt > 5);
+  bool of_good = have_of && (of_noise < of_noise_max);
 
-  bool close_soft = translating &&
-    (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
+  float yaw_rate = stateGetBodyRates_f()->r;            // rad/s
+  bool not_turning_fast = fabsf(yaw_rate) < 0.4f;       // rad/s (tune)
 
-  bool close_hard = not_turning_fast && (flow_mag > 1200.f); // override when almost stopped but flow explodes
-
-  // bool close_now = of_good && (close_soft || close_hard);
-
-  // flow magnitude proxy (int values -> use float)
+  // flow magnitude proxy
   float flow_mag = sqrtf((float)of_flow_x_last * (float)of_flow_x_last +
-                       (float)of_flow_y_last * (float)of_flow_y_last);
+                        (float)of_flow_y_last * (float)of_flow_y_last);
 
-  // simple low-pass filter on divergence (reduces jitter)
+  // update divergence filter (only when moving)
   if (of_good && translating) {
     of_div_filt = 0.7f * of_div_filt + 0.3f * of_div_size;
   } else {
     of_div_filt *= 0.9f;
   }
 
-  bool close_now = of_good && translating &&
-   (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
-    
+  // soft close: when translating
+  bool close_soft = translating &&
+    (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
+
+  // hard close: even if nearly stopped, but only if not turning fast
+  bool close_hard = not_turning_fast && (flow_mag > 1200.f); // tune
+
+  bool close_now = of_good && (close_soft || close_hard);
+
   // debounce
   if (close_now) {
     if (of_close_cnt < OF_CLOSE_N) { of_close_cnt++; }
