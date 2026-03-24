@@ -158,11 +158,12 @@ void orange_avoider_init(void)
   // bind our colorfilter callbacks to receive the color filter outputs
   AbiBindMsgVISUAL_DETECTION(ORANGE_AVOIDER_VISUAL_DETECTION_ID, &color_detection_ev, color_detection_cb);
   AbiBindMsgOPTICAL_FLOW(ABI_BROADCAST, &opticflow_ev, opticflow_cb);
-
-  pthread_mutex_init(&oa_vis_mutex, NULL);
-
+  
   // register at 10 FPS so it’s light
   oa_vis_listener = cv_add_to_device(&front_camera, orange_avoider_vis_cb, 10);
+  pthread_mutex_init(&oa_vis_mutex, NULL);
+
+  
 }
 
 /*
