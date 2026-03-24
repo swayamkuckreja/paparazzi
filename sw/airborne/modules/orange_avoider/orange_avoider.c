@@ -200,8 +200,8 @@ void orange_avoider_periodic(void)
     of_div_filt *= 0.9f;
   }
 
-  // bool close_now = of_good && translating &&
-  // (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
+  bool close_now = of_good && translating &&
+   (fabsf(of_div_filt) > of_div_thresh || flow_mag > of_flow_mag_thresh);
     
   // debounce
   if (close_now) {
