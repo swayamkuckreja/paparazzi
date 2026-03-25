@@ -216,9 +216,15 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
   uint32_t tot_y = 0;
   uint8_t *buffer = img->buf;
 
+  // make an image of size img->w x img->h which will contain 0 and 1
+  uint8_t* blue_filtered_image = malloc(img->w * img->h);
+
   // Go through all the pixels
   for (uint16_t y = 0; y < img->h; y++) {
     for (uint16_t x = 0; x < img->w; x ++) {
+      // set the blue filtered image to zero for this pixel
+      blue_filtered_image[y * img->w + x] = 0;
+
       // Check if the color is inside the specified values
       uint8_t *yp, *up, *vp;
       if (x % 2 == 0) {
@@ -237,18 +243,38 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
       if ( (*yp >= lum_min) && (*yp <= lum_max) &&
            (*up >= cb_min ) && (*up <= cb_max ) &&
            (*vp >= cr_min ) && (*vp <= cr_max )) {
-        cnt ++;
-        tot_x += x;
-        tot_y += y;
+        blue_filtered_image[y * img->w + x] = 1;
+
+        // cnt ++;
+        // tot_x += x;
+        // tot_y += y;
         if (draw){
           *yp = 255;  // make pixel brighter in image
         }
       }
     }
   }
+
+  // loop again but this time do the convolution to get rid of the blue carpet
+  for (uint16_t y = 6; y < img->h - 6; y++) {
+    for (uint16_t x = 0; x < img->w; x ++) {
+      if (blue_filtered_image[y * img->w + x] == 1 && blue_filtered_image[(y-1) * img->w + x] == 1 
+         && blue_filtered_image[(y-2) * img->w + x] == 1 && blue_filtered_image[(y-3) * img->w + x] == 1
+         && blue_filtered_image[(y-4) * img->w + x] == 1 && blue_filtered_image[(y-5) * img->w + x] == 1 
+         && blue_filtered_image[(y-6) * img->w + x] == 1 && blue_filtered_image[(y+1) * img->w + x] == 1 
+         && blue_filtered_image[(y+2) * img->w + x] == 1 && blue_filtered_image[(y+3) * img->w + x] == 1 
+         && blue_filtered_image[(y+4) * img->w + x] == 1 && blue_filtered_image[(y+5) * img->w + x] == 1 
+         && blue_filtered_image[(y+6) * img->w + x] == 1) {
+          cnt ++;
+          tot_x += x;
+          tot_y += y;
+         }
+    }
+  }
+  
   if (cnt > 0) {
-    *p_xc = (int32_t)roundf(tot_x / ((float) cnt) - img->w * 0.5f);
-    *p_yc = (int32_t)roundf(img->h * 0.5f - tot_y / ((float) cnt));
+    *p_xc = (int32_t)roundf(tot_x / ((float) cnt) - img->w * 0.5f); // x coordinate of centroid with respect to center of image
+    *p_yc = (int32_t)roundf(img->h * 0.5f - tot_y / ((float) cnt)); // y coordinate of centroid with respect to center of image
   } else {
     *p_xc = 0;
     *p_yc = 0;
@@ -263,6 +289,7 @@ void color_object_detector_periodic(void)
   memcpy(local_filters, global_filters, 2*sizeof(struct color_object_t));
   pthread_mutex_unlock(&mutex);
 
+  // sending the centroid of the "gate" x and y component wrt to the center, also giving the count of blue gate pixels
   if(local_filters[0].updated){
     AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION1_ID, local_filters[0].x_c, local_filters[0].y_c,
         0, 0, local_filters[0].color_count, 0);
