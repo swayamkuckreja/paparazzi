@@ -1,37 +1,30 @@
 <!DOCTYPE module SYSTEM "module.dtd">
 
-<module name="orange_avoider">
+<module name="orange_avoider" dir="orange_avoider">
   <doc>
-    <description>
-This module is an example module for the course AE4317 Autonomous Flight of Micro Air Vehicles at the TU Delft.
-This module is used in combination with a color filter (cv_detect_color_object) and the navigation mode of the autopilot.
-The avoidance strategy is to simply count the total number of orange pixels. When above a certain percentage threshold,
-(given by color_count_frac) we assume that there is an obstacle and we turn.
-
-The color filter settings are set using the cv_detect_color_object. This module can run multiple filters simultaneously
-so you have to define which filter to use with the ORANGE_AVOIDER_VISUAL_DETECTION_ID setting.
-    </description>
-    <define name="ORANGE_AVOIDER_VISUAL_DETECTION_ID" value="ABI_BROADCAST" description="which VISUAL_DETECTION message to receive for orange pixel detection."/>
+    Merged green-follow + opticflow avoidance arbiter.
   </doc>
-    <settings>
-    <dl_settings>
-      <dl_settings name="OrangeAvoider">
-        <dl_setting var="oa_green_roi_frac_threshold" min="0" step="0.01" max="1"/>
-        <dl_setting var="oa_search_yaw_increment_deg" min="-45" step="1" max="45"/>
-        <dl_setting var="oa_forward_step_m" min="0.05" step="0.01" max="1.0"/>
-      </dl_settings>
-    </dl_settings>
-  </settings>
-  
-  <dep>
-    <depends>cv_detect_color_object</depends>
-  </dep>
+
   <header>
     <file name="orange_avoider.h"/>
   </header>
+
   <init fun="orange_avoider_init()"/>
   <periodic fun="orange_avoider_periodic()" freq="4"/>
-  <makefile target="ap|nps">
+
+  <settings>
+    <dl_settings name="OrangeAvoider">
+      <!-- Green follow tuning -->
+      <dl_setting var="oa_green_roi_frac_threshold" min="0" step="0.01" max="1.0" shortname="green_thr"/>
+      <dl_setting var="oa_search_yaw_increment_deg" min="0" step="1" max="45" shortname="yaw_inc"/>
+      <dl_setting var="oa_forward_step_m" min="0" step="0.05" max="2.0" shortname="fwd_step"/>
+
+      <!-- Orange detection tuning (fraction of ROI pixels) -->
+      <dl_setting var="oa_color_count_frac" min="0" step="0.01" max="1.0" shortname="orange_thr"/>
+    </dl_settings>
+  </settings>
+
+  <makefile>
     <file name="orange_avoider.c"/>
   </makefile>
 </module>
