@@ -283,7 +283,8 @@ void orange_avoider_periodic(void)
       }
       break;
 
-    case OBSTACLE_FOUND:
+    
+    case OBSTACLE_FOUND: {
       waypoint_move_here_2d(WP_GOAL);
       waypoint_move_here_2d(WP_TRAJECTORY);
       // back up a bit to create distance to obstacle
@@ -304,6 +305,7 @@ void orange_avoider_periodic(void)
 
       navigation_state = SEARCH_FOR_SAFE_HEADING;
       break;
+    }
 
     case SEARCH_FOR_SAFE_HEADING:
       increase_nav_heading(heading_increment);
@@ -335,7 +337,7 @@ void orange_avoider_periodic(void)
   }
 }
 
-
+static struct image_t *orange_avoider_vis_cb(struct image_t *img, uint8_t cam_id)
 {
   (void)cam_id; // not used
 
