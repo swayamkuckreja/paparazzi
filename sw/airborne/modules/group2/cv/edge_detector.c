@@ -69,29 +69,35 @@ static struct image_t *edgedetector_func(struct image_t *img, uint8_t camera_id 
   //                                      color_cr_min, color_cr_max
   //                                     );
   struct image_t copy;
-  image_to_grayscale(img, *copy)
+  image_to_grayscale(img, *copy);
 
-  Mat M( img->h , img->w , CV_8UC2 , img );
+  Mat M( img->h , img->w , CV_8UC2 , copy->buf );
 
+  Mat blur, edges;
 
+  // Apply Gaussian blur
+  GaussianBlur(img, blur, Size(5, 5), 1.4);
+
+  // Apply Canny Edge Detector
+  Canny(blur, edges, 100, 200);
   
 
 
-  if (COLORFILTER_SEND_OBSTACLE) {
-    if (color_count > 20)
-    {
-      AbiSendMsgOBSTACLE_DETECTION(OBS_DETECTION_COLOR_ID, 1.f, 0.f, 0.f);
-    }
-    else
-    {
-      AbiSendMsgOBSTACLE_DETECTION(OBS_DETECTION_COLOR_ID, 10.f, 0.f, 0.f);
-    }
+  // if (COLORFILTER_SEND_OBSTACLE) {
+  //   if (color_count > 20)
+  //   {
+  //     AbiSendMsgOBSTACLE_DETECTION(OBS_DETECTION_COLOR_ID, 1.f, 0.f, 0.f);
+  //   }
+  //   else
+  //   {
+  //     AbiSendMsgOBSTACLE_DETECTION(OBS_DETECTION_COLOR_ID, 10.f, 0.f, 0.f);
+  //   }
   }
 
   return img; // Colorfilter did not make a new image
 }
 
-void colorfilter_init(void)
+void egdedetector_init(void)
 {
   cv_add_to_device(&COLORFILTER_CAMERA, edgedetector_func, COLORFILTER_FPS, 0);
 }

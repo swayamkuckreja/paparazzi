@@ -18,6 +18,8 @@ import cv2
 # Load image in grayscale
 img = cv2.imread("/home/luuk/mavlab/paparazzi/computer_vision/86623673.jpg", cv2.IMREAD_GRAYSCALE)
 
+
+print(type(img))
 # print(type(image))21190489352849371
 # print(image.dtype)
 # print(image.shape)
