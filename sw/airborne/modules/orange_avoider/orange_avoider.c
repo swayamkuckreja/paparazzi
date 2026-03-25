@@ -55,7 +55,7 @@ static pthread_mutex_t oa_vis_mutex;
 static float oa_prox01 = 0.f;  // 0..1 proximity value for visualization
 static struct video_listener *oa_vis_listener = NULL;
 
-static struct image_t *orange_avoider_vis_cb(struct image_t *img);
+static struct image_t *orange_avoider_vis_cb(struct image_t *img, uint8_t cam_id);
 
 
 static void opticflow_cb(uint8_t sender_id,
@@ -161,6 +161,7 @@ void orange_avoider_init(void)
 
   pthread_mutex_init(&oa_vis_mutex, NULL);
   oa_vis_listener = cv_add_to_device(&front_camera, orange_avoider_vis_cb, 10, 0);
+
 }
 
 
@@ -336,35 +337,30 @@ void orange_avoider_periodic(void)
 
 
 {
+  (void)cam_id; // not used
+
   float prox;
   pthread_mutex_lock(&oa_vis_mutex);
   prox = oa_prox01;
   pthread_mutex_unlock(&oa_vis_mutex);
 
-  // draw a left-side vertical bar (grayscale)
-  // UYVY (YUV422): keep chroma neutral (U=V=128), vary Y
   const uint8_t U = 128, V = 128;
-  uint8_t Y = (uint8_t)(30 + prox * 200);  // 30..230
+  uint8_t Y = (uint8_t)(30 + prox * 200);
 
   int bar_w = 12;
   if (bar_w > img->w) bar_w = img->w;
 
+  uint8_t *buf = (uint8_t *)img->buf;
   for (int y = 0; y < img->h; y++) {
     for (int x = 0; x < bar_w; x++) {
-      // pointer to 2-pixel group
-      uint8_t *buf = (uint8_t *)img->buf;
       uint8_t *p = buf + y * img->w * 2 + (x / 2) * 4; // U Y0 V Y1
-      p[0] = U;
-      p[2] = V;
-      if ((x & 1) == 0) {
-        p[1] = Y;  // Y0
-      } else {
-        p[3] = Y;  // Y1
-      }
+      p[0] = U; p[2] = V;
+      if ((x & 1) == 0) p[1] = Y; else p[3] = Y;
     }
   }
   return img;
 }
+
 
 
 
