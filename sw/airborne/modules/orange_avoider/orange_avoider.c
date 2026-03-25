@@ -36,8 +36,8 @@
 #ifndef ORANGE_AVOIDER_VERBOSE
 #define ORANGE_AVOIDER_VERBOSE 1
 #endif
-#define FUNCTION __func__
 
+#define FUNCTION __func__
 #define FUNCTION __FUNCTION__
 #define PRINT(fmt, ...) fprintf(stderr, "[orange_avoider->%s()] " fmt, FUNCTION, ##__VA_ARGS__)
 #if ORANGE_AVOIDER_VERBOSE
@@ -122,17 +122,11 @@ float oa_of_goal_step_m            = OA_OF_GOAL_STEP_M;
 float oa_of_traj_step_m            = OA_OF_TRAJ_STEP_M;
 
 /* ---------------- Internal navigation state (green follow) ---------------- */
-enum gf_state_t {
-  GF_SAFE = 0,
-  GF_SEARCH = 1
-};
+enum gf_state_t { GF_SEARCH = 0, GF_SAFE };
 static enum gf_state_t gf_state = GF_SEARCH;
 
 /* ---------------- Mode supervisor ---------------- */
-enum oa_mode_t {
-  OA_MODE_GREENFOLLOW = 0,
-  OA_MODE_OF_AVOID = 1
-};
+enum oa_mode_t { OA_MODE_GREENFOLLOW = 0, OA_MODE_OF_AVOID };
 static enum oa_mode_t oa_mode = OA_MODE_GREENFOLLOW;
 static uint32_t of_avoid_until_us = 0;
 static bool of_avoid_just_entered = false;
@@ -289,9 +283,7 @@ void orange_avoider_periodic(void)
   } else {
     if (of_close_cnt > 0) { of_close_cnt--; }
   }
-
   const bool obstacle_of = (of_close_cnt >= oa_of_close_n);
-
 
   /* --- Mode switching: enter timed OF_AVOID --- */
   const uint32_t now_us = get_sys_time_usec();
