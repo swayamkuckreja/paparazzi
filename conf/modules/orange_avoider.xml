@@ -2,10 +2,9 @@
 
 <module name="orange_avoider" dir="orange_avoider">
   <doc>
-    Green-follow + opticflow avoidance arbiter.
-    - Default: follow green ROI on the ground (ROI1 bottom).
-    - Trigger: opticflow proximity (any obstacle).
-    - Action: run timed opticflow avoidance, then return to green-follow.
+    <description>
+      Green-follow + opticflow avoidance arbiter.
+    </description>
   </doc>
 
   <header>
@@ -17,25 +16,9 @@
 
   <settings>
     <dl_settings name="OrangeAvoider">
-      <!-- Green-follow tuning -->
       <dl_setting var="oa_green_roi_frac_threshold" min="0" step="0.01" max="1.0" shortname="green_thr"/>
-      <dl_setting var="oa_tree_roi2_frac_threshold" min="0" step="0.01" max="1.0" shortname="roi2_thr"/>
       <dl_setting var="oa_search_yaw_increment_deg" min="0" step="1" max="45" shortname="yaw_inc"/>
       <dl_setting var="oa_forward_step_m" min="0" step="0.05" max="2.0" shortname="fwd_step"/>
-
-      <!-- Opticflow obstacle detection -->
-      <dl_setting var="oa_of_noise_max" min="0" step="0.01" max="2.0" shortname="of_nmax"/>
-      <dl_setting var="oa_of_div_thresh" min="0" step="0.005" max="1.0" shortname="of_div"/>
-      <dl_setting var="oa_of_flow_mag_thresh" min="0" step="50" max="5000" shortname="of_mag"/>
-      <dl_setting var="oa_of_close_min_speed_mps" min="0" step="0.01" max="1.0" shortname="of_vmin"/>
-      <dl_setting var="oa_of_close_n" min="1" step="1" max="10" shortname="of_N"/>
-
-      <!-- Opticflow avoidance behavior -->
-      <dl_setting var="oa_of_avoid_time_s" min="0" step="0.1" max="5.0" shortname="of_time"/>
-      <dl_setting var="oa_of_retreat_m" min="0" step="0.05" max="2.0" shortname="of_ret"/>
-      <dl_setting var="oa_of_turn_step_deg" min="0" step="1" max="45" shortname="of_turn"/>
-      <dl_setting var="oa_of_goal_step_m" min="0" step="0.05" max="2.0" shortname="of_gstp"/>
-      <dl_setting var="oa_of_traj_step_m" min="0" step="0.05" max="4.0" shortname="of_tstp"/>
     </dl_settings>
   </settings>
 
