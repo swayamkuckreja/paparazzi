@@ -124,20 +124,12 @@
       <define name="OA_OF_AVOID_TIME_S" value="1.2"/>
       <define name="OA_OF_FLOW_MAG_THRESH" value="500"/>
       <define name="OA_OF_DIV_THRESH" value="0.06"/>
-    </module>
-
-
-
-
-    <!-- Merged avoider -->
-    <module name="orange_avoider">
-      <!-- merged orange_avoider.c should listen to both sender IDs, easiest is broadcast -->
-      <define name="ORANGE_AVOIDER_VISUAL_DETECTION_ID" value="ABI_BROADCAST"/>
-
-      <!-- Defaults (still tunable via GCS) -->
-      <define name="OA_GREEN_ROI_FRAC_THRESHOLD" value="0.70"/>
+    
       <define name="OA_SEARCH_YAW_INCREMENT_DEG" value="10.0"/>
-      <define name="OA_FORWARD_STEP_M" value="1.0"/>
+      <define name="OA_FORWARD_STEP_M" value="0.20"/>
+
+      <define name="OA_OF_NOISE_MAX" value="0.70"/>
+      <define name="OA_OF_CLOSE_N" value="2"/>
     </module>
 
     <module name="video_rtp_stream">
