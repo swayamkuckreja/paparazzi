@@ -64,7 +64,7 @@ static void opticflow_cb(uint8_t sender_id,
                          float quality,
                          float divergence);
 
-
+static uint8_t gate_logic(uint8_t gate_logic(float gate_x, float moveDistance));
 
 
 // Opticflow last values
@@ -279,7 +279,13 @@ void orange_avoider_periodic(void)
       } else if (obstacle_free_confidence == 0) {
         navigation_state = OBSTACLE_FOUND;
 
-      } else {
+      } 
+      // else if (gate) {
+
+      //   gate_logic(gate.x, moveDistance);
+          
+      // } 
+      else {
         moveWaypointForward(WP_GOAL, moveDistance);
       }
       break;
@@ -415,6 +421,19 @@ uint8_t moveWaypointForward(uint8_t waypoint, float distanceMeters)
   return false;
 }
 
+
+// uint8_t gate_logic(float gate_x, float moveDistance) {
+//   if (gate_x <= 0.4*front_camera.output_size.w ) {
+//       increase_nav_heading(-heading_increment); //turn left
+//   }
+//   else if (gate_x >= 0.6*front_camera.output_size.w)  {
+//       increase_nav_heading(heading_increment); //turn right
+//   } else {
+//       moveWaypointForward(WP_GOAL, moveDistance);
+//   }
+//   return false;
+
+// }
 /*
  * Calculates coordinates of a distance of 'distanceMeters' forward w.r.t. current position and heading
  */
