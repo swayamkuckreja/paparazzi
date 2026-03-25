@@ -2,7 +2,7 @@
 
 <module name="orange_avoider" dir="orange_avoider">
   <doc>
-    Merged green-follow + opticflow avoidance arbiter.
+    Green-follow + opticflow avoidance arbiter.
   </doc>
 
   <header>
