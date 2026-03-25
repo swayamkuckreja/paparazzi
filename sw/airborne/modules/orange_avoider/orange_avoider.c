@@ -44,7 +44,7 @@ static uint8_t chooseRandomIncrementAvoidance(void);
 
 enum navigation_state_t {
   SAFE,
-  OBSTACLE_FOUND,
+  GATE_FOUND,
   SEARCH_FOR_SAFE_HEADING,
   OUT_OF_BOUNDS
 };
@@ -55,6 +55,7 @@ float oa_color_count_frac = 0.18f;
 // define and initialise global variables
 enum navigation_state_t navigation_state = SEARCH_FOR_SAFE_HEADING;
 int32_t color_count = 0;                // orange color count from color filter for obstacle detection
+int32_t gate_y = 0;                     // y coordinate of the centroid of the orange pixels, used for heading control when gate is found
 int16_t obstacle_free_confidence = 0;   // a measure of how certain we are that the way ahead is safe.
 float heading_increment = 5.f;          // heading angle increment [deg]
 float maxDistance = 2.25;               // max waypoint displacement [m]
@@ -73,11 +74,13 @@ const int16_t max_trajectory_confidence = 5; // number of consecutive negative o
 #endif
 static abi_event color_detection_ev;
 static void color_detection_cb(uint8_t __attribute__((unused)) sender_id,
-                               int16_t __attribute__((unused)) pixel_x, int16_t __attribute__((unused)) pixel_y,
+                               int16_t pixel_x, int16_t pixel_y,
                                int16_t __attribute__((unused)) pixel_width, int16_t __attribute__((unused)) pixel_height,
-                               int32_t quality, int16_t __attribute__((unused)) extra)
+                               int32_t quality, int16_t extra)
 {
-  color_count = quality;
+  color_count = quality; // this is the amount of blue gate pixels I have
+  // gate_x = pixel_x;
+  gate_y = pixel_y;
 }
 
 /*
@@ -127,21 +130,24 @@ void orange_avoider_periodic(void)
       if (!InsideObstacleZone(WaypointX(WP_TRAJECTORY),WaypointY(WP_TRAJECTORY))){
         navigation_state = OUT_OF_BOUNDS;
       } else if (obstacle_free_confidence == 0){
-        navigation_state = OBSTACLE_FOUND;
-      } else {
+        navigation_state = GATE_FOUND;
+      }
+      else {
         moveWaypointForward(WP_GOAL, moveDistance);
       }
 
       break;
-    case OBSTACLE_FOUND:
-      // stop
-      waypoint_move_here_2d(WP_GOAL);
-      waypoint_move_here_2d(WP_TRAJECTORY);
+    case GATE_FOUND:
+      if (gate_y <= 0.4* front_camera.output_size.w ) {
+      increase_nav_heading(-heading_increment); //turn left
+        }
+        else if (gate_y >= 0.6* front_camera.output_size.w)  {
+            increase_nav_heading(heading_increment); //turn right
+        } else {
+            moveWaypointForward(WP_GOAL, moveDistance);
+      }
 
-      // randomly select new search direction
-      chooseRandomIncrementAvoidance();
-
-      navigation_state = SEARCH_FOR_SAFE_HEADING;
+      navigation_state = SAFE;
 
       break;
     case SEARCH_FOR_SAFE_HEADING:
@@ -167,6 +173,7 @@ void orange_avoider_periodic(void)
         navigation_state = SEARCH_FOR_SAFE_HEADING;
       }
       break;
+
     default:
       break;
   }
