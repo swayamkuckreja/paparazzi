@@ -36,6 +36,7 @@
 #ifndef ORANGE_AVOIDER_VERBOSE
 #define ORANGE_AVOIDER_VERBOSE 1
 #endif
+#define FUNCTION __func__
 
 #define FUNCTION __FUNCTION__
 #define PRINT(fmt, ...) fprintf(stderr, "[orange_avoider->%s()] " fmt, FUNCTION, ##__VA_ARGS__)
@@ -265,7 +266,7 @@ void orange_avoider_periodic(void)
   const bool translating = (vxy > oa_of_close_min_speed_mps);
 
   const float flow_mag = sqrtf((float)of_flow_x_last * (float)of_flow_x_last +
-                               (float)of_flow_y_last * (float)of_flow_y_last);
+                              (float)of_flow_y_last * (float)of_flow_y_last);
 
   if (of_good && translating) {
     of_div_filt = 0.7f * of_div_filt + 0.3f * of_div_size;
@@ -274,21 +275,23 @@ void orange_avoider_periodic(void)
   }
 
   const bool close_soft = translating &&
-      (fabsf(of_div_filt) > oa_of_div_thresh || flow_mag > oa_of_flow_mag_thresh);
+    (fabsf(of_div_filt) > oa_of_div_thresh || flow_mag > oa_of_flow_mag_thresh);
 
-  /* Optional “hard close”: catches very near stuff even when not translating much */
   struct FloatRates *rates = stateGetBodyRates_f();
   const bool not_turning_fast = fabsf(rates->r) < 0.4f;
-  const bool close_hard = not_turning_fast && (flow_mag > (oa_of_flow_mag_thresh * 2.2f));
+  const bool close_hard = of_good && not_turning_fast && (flow_mag > (oa_of_flow_mag_thresh * 2.2f));
 
   const bool close_now = of_good && (close_soft || close_hard);
 
+  /* debounce with decay */
   if (close_now) {
     if (of_close_cnt < oa_of_close_n) { of_close_cnt++; }
   } else {
-    of_close_cnt = 0;
+    if (of_close_cnt > 0) { of_close_cnt--; }
   }
+
   const bool obstacle_of = (of_close_cnt >= oa_of_close_n);
+
 
   /* --- Mode switching: enter timed OF_AVOID --- */
   const uint32_t now_us = get_sys_time_usec();
@@ -334,6 +337,10 @@ void orange_avoider_periodic(void)
   VERBOSE_PRINT("GF mode: green=%0.2f(top=%0.2f) green_ok=%d tree_like=%d of(close=%d cnt=%u mag=%0.1f div=%0.3f)\n",
                 green_frac, top_frac, (int)green_ok, (int)tree_like,
                 (int)obstacle_of, (unsigned)of_close_cnt, flow_mag, of_div_filt);
+  
+  VERBOSE_PRINT("OF: cnt=%lu good=%d noise=%0.2f div=%0.3f divf=%0.3f flow=(%d,%d) mag=%0.1f close_cnt=%u\n",
+  (unsigned long)of_msg_cnt, (int)of_good, of_noise, of_div_size, of_div_filt,
+  of_flow_x_last, of_flow_y_last, flow_mag, (unsigned)of_close_cnt);
 
   switch (gf_state) {
 
