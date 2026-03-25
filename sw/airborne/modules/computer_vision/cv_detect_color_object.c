@@ -25,21 +25,28 @@
  * if you are over the defined object or not
  */
 
-// Own header
+ 
 #include "modules/computer_vision/cv_detect_color_object.h"
 #include "modules/computer_vision/cv.h"
 #include "modules/core/abi.h"
+#include "modules/computer_vision/lib/vision/image.h"
 #include "std.h"
 
 #include <stdio.h>
 #include <stdbool.h>
 #include <math.h>
 #include <limits.h>
-#include "pthread.h"
+#include <string.h>
+#include <pthread.h>
 
-#define PRINT(string,...) fprintf(stderr, "[object_detector->%s()] " string,__FUNCTION__ , ##__VA_ARGS__)
+#ifndef OBJECT_DETECTOR_VERBOSE
+#define OBJECT_DETECTOR_VERBOSE 0
+#endif
+
+#define FUNCTION __FUNCTION__
+#define PRINT(fmt, ...) fprintf(stderr, "[cv_detect_color_object->%s()] " fmt, FUNCTION, ##__VA_ARGS__)
 #if OBJECT_DETECTOR_VERBOSE
-#define VERBOSE_PRINT PRINT
+#define VERBOSE_PRINT(...) PRINT(__VA_ARGS__)
 #else
 #define VERBOSE_PRINT(...)
 #endif
@@ -47,10 +54,10 @@
 static pthread_mutex_t mutex;
 
 #ifndef COLOR_OBJECT_DETECTOR_FPS1
-#define COLOR_OBJECT_DETECTOR_FPS1 0 ///< Default FPS (zero means run at camera fps)
+#define COLOR_OBJECT_DETECTOR_FPS1 0
 #endif
 #ifndef COLOR_OBJECT_DETECTOR_FPS2
-#define COLOR_OBJECT_DETECTOR_FPS2 0 ///< Default FPS (zero means run at camera fps)
+#define COLOR_OBJECT_DETECTOR_FPS2 0
 #endif
 #ifndef COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC
 #define COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC 0.3f
@@ -59,25 +66,12 @@ static pthread_mutex_t mutex;
 #define COLOR_OBJECT_DETECTOR_ROI_HEIGHT_FRAC 0.3f
 #endif
 
-// Filter Settings
-uint8_t cod_lum_min1 = 0;
-uint8_t cod_lum_max1 = 0;
-uint8_t cod_cb_min1 = 0;
-uint8_t cod_cb_max1 = 0;
-uint8_t cod_cr_min1 = 0;
-uint8_t cod_cr_max1 = 0;
-
-uint8_t cod_lum_min2 = 0;
-uint8_t cod_lum_max2 = 0;
-uint8_t cod_cb_min2 = 0;
-uint8_t cod_cb_max2 = 0;
-uint8_t cod_cr_min2 = 0;
-uint8_t cod_cr_max2 = 0;
-
+/* Filter Settings (set via airframe defines + dl_settings) */
+uint8_t cod_lum_min1 = 0, cod_lum_max1 = 0, cod_cb_min1 = 0, cod_cb_max1 = 0, cod_cr_min1 = 0, cod_cr_max1 = 0;
+uint8_t cod_lum_min2 = 0, cod_lum_max2 = 0, cod_cb_min2 = 0, cod_cb_max2 = 0, cod_cr_min2 = 0, cod_cr_max2 = 0;
 bool cod_draw1 = false;
 bool cod_draw2 = false;
 
-// define global variables
 struct color_object_t {
   uint32_t roi_color_count;
   uint32_t roi_area;
@@ -85,101 +79,175 @@ struct color_object_t {
   uint32_t roi2_area;
   bool updated;
 };
-struct color_object_t global_filters[2];
+static struct color_object_t global_filters[2];
 
-// Function
-void color_object_filter(struct image_t *img, bool draw,
-                         uint8_t lum_min, uint8_t lum_max,
-                         uint8_t cb_min, uint8_t cb_max,
-                         uint8_t cr_min, uint8_t cr_max,
-                         uint32_t *p_roi_color_count, uint32_t *p_roi_area,
-                         uint32_t *p_roi2_color_count, uint32_t *p_roi2_area);
+static void color_object_filter(struct image_t *img, bool draw,
+                                uint8_t lum_min, uint8_t lum_max,
+                                uint8_t cb_min,  uint8_t cb_max,
+                                uint8_t cr_min,  uint8_t cr_max,
+                                uint32_t *p_roi_color_count, uint32_t *p_roi_area,
+                                uint32_t *p_roi2_color_count, uint32_t *p_roi2_area)
+{
+  uint8_t *buffer = (uint8_t *)img->buf;
 
-/*
- * object_detector
- * @param img - input image to process
- * @param filter - which detection filter to process
- * @return img
- */
+  /* ROI1 = bottom-center (ground check)
+   * ROI2 = top-center (tree/overhang check)
+   */
+  uint16_t roi_w  = (uint16_t)fmaxf(1.f, img->w * COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC);
+  uint16_t roi_h  = (uint16_t)fmaxf(1.f, img->h * COLOR_OBJECT_DETECTOR_ROI_HEIGHT_FRAC);
+  uint16_t roi2_w = roi_w;
+  uint16_t roi2_h = roi_h;
+
+  if (roi_w > img->w) roi_w = img->w;
+  if (roi_h > img->h) roi_h = img->h;
+  if (roi2_w > img->w) roi2_w = img->w;
+  if (roi2_h > img->h) roi2_h = img->h;
+
+  uint16_t roi_x_min  = (img->w - roi_w) / 2;
+  uint16_t roi_x_max  = roi_x_min + roi_w;
+  uint16_t roi_y_min  = img->h - roi_h;
+  uint16_t roi_y_max  = img->h;
+
+  uint16_t roi2_x_min = (img->w - roi2_w) / 2;
+  uint16_t roi2_x_max = roi2_x_min + roi2_w;
+  uint16_t roi2_y_min = 0;
+  uint16_t roi2_y_max = roi2_h;
+
+  uint32_t roi_color_count = 0;
+  uint32_t roi2_color_count = 0;
+
+  if (draw) {
+    struct point_t a, b;
+    uint8_t c[4] = {90, 255, 240, 255};
+
+    /* ROI1 box */
+    a.x = roi_x_min; a.y = roi_y_min; b.x = roi_x_max; b.y = roi_y_min;
+    image_draw_line_color(img, &a, &b, c);
+    a.x = roi_x_min; a.y = roi_y_max; b.x = roi_x_max; b.y = roi_y_max;
+    image_draw_line_color(img, &a, &b, c);
+    a.x = roi_x_min; a.y = roi_y_min; b.x = roi_x_min; b.y = roi_y_max;
+    image_draw_line_color(img, &a, &b, c);
+    a.x = roi_x_max; a.y = roi_y_min; b.x = roi_x_max; b.y = roi_y_max;
+    image_draw_line_color(img, &a, &b, c);
+
+    /* ROI2 box */
+    a.x = roi2_x_min; a.y = roi2_y_min; b.x = roi2_x_max; b.y = roi2_y_min;
+    image_draw_line_color(img, &a, &b, c);
+    a.x = roi2_x_min; a.y = roi2_y_max; b.x = roi2_x_max; b.y = roi2_y_max;
+    image_draw_line_color(img, &a, &b, c);
+    a.x = roi2_x_min; a.y = roi2_y_min; b.x = roi2_x_min; b.y = roi2_y_max;
+    image_draw_line_color(img, &a, &b, c);
+    a.x = roi2_x_max; a.y = roi2_y_min; b.x = roi2_x_max; b.y = roi2_y_max;
+    image_draw_line_color(img, &a, &b, c);
+  }
+
+  /* iterate YUV422 (UYVY) */
+  for (uint16_t y = 0; y < img->h; y++) {
+    for (uint16_t x = 0; x < img->w; x++) {
+
+      uint8_t *yp, *up, *vp;
+
+      if ((x & 1) == 0) {
+        /* even pixel: U Y0 V Y1 */
+        up = &buffer[y * 2 * img->w + 2 * x + 0];
+        yp = &buffer[y * 2 * img->w + 2 * x + 1];
+        vp = &buffer[y * 2 * img->w + 2 * x + 2];
+      } else {
+        /* odd pixel shares U,V with previous even */
+        up = &buffer[y * 2 * img->w + 2 * (x - 1) + 0];
+        vp = &buffer[y * 2 * img->w + 2 * (x - 1) + 2];
+        yp = &buffer[y * 2 * img->w + 2 * x + 1];
+      }
+
+      if ((*yp >= lum_min) && (*yp <= lum_max) &&
+          (*up >= cb_min)  && (*up <= cb_max)  &&
+          (*vp >= cr_min)  && (*vp <= cr_max)) {
+
+        const bool in_roi1 = (x >= roi_x_min && x < roi_x_max && y >= roi_y_min && y < roi_y_max);
+        const bool in_roi2 = (x >= roi2_x_min && x < roi2_x_max && y >= roi2_y_min && y < roi2_y_max);
+
+        if (in_roi1) { roi_color_count++; }
+        if (in_roi2) { roi2_color_count++; }
+
+        if (draw) {
+          *yp = 255;
+        }
+      }
+    }
+  }
+
+  if (p_roi_color_count) *p_roi_color_count = roi_color_count;
+  if (p_roi2_color_count) *p_roi2_color_count = roi2_color_count;
+  if (p_roi_area) *p_roi_area = (uint32_t)roi_w * (uint32_t)roi_h;
+  if (p_roi2_area) *p_roi2_area = (uint32_t)roi2_w * (uint32_t)roi2_h;
+}
+
 static struct image_t *object_detector(struct image_t *img, uint8_t filter)
 {
-  uint8_t lum_min, lum_max;
-  uint8_t cb_min, cb_max;
-  uint8_t cr_min, cr_max;
+  uint8_t lum_min, lum_max, cb_min, cb_max, cr_min, cr_max;
   bool draw;
 
-  switch (filter){
+  switch (filter) {
     case 1:
-      lum_min = cod_lum_min1;
-      lum_max = cod_lum_max1;
-      cb_min = cod_cb_min1;
-      cb_max = cod_cb_max1;
-      cr_min = cod_cr_min1;
-      cr_max = cod_cr_max1;
+      lum_min = cod_lum_min1; lum_max = cod_lum_max1;
+      cb_min  = cod_cb_min1;  cb_max  = cod_cb_max1;
+      cr_min  = cod_cr_min1;  cr_max  = cod_cr_max1;
       draw = cod_draw1;
       break;
     case 2:
-      lum_min = cod_lum_min2;
-      lum_max = cod_lum_max2;
-      cb_min = cod_cb_min2;
-      cb_max = cod_cb_max2;
-      cr_min = cod_cr_min2;
-      cr_max = cod_cr_max2;
+      lum_min = cod_lum_min2; lum_max = cod_lum_max2;
+      cb_min  = cod_cb_min2;  cb_max  = cod_cb_max2;
+      cr_min  = cod_cr_min2;  cr_max  = cod_cr_max2;
       draw = cod_draw2;
       break;
     default:
       return img;
-  };
+  }
 
-  // Filter
-  uint32_t roi_color_count = 0;
-  uint32_t roi_area = 0;
-  uint32_t roi2_color_count = 0;
-  uint32_t roi2_area = 0;
+  uint32_t roi_c = 0, roi_a = 0, roi2_c = 0, roi2_a = 0;
   color_object_filter(img, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max,
-                      &roi_color_count, &roi_area, &roi2_color_count, &roi2_area);
-  VERBOSE_PRINT("ROI %u/%u\n", filter, roi_color_count, roi_area);
+                     &roi_c, &roi_a, &roi2_c, &roi2_a);
 
   pthread_mutex_lock(&mutex);
-  global_filters[filter-1].roi_color_count = roi_color_count;
-  global_filters[filter-1].roi_area = roi_area;
-  global_filters[filter-1].roi2_count = roi2_color_count;
-  global_filters[filter-1].roi2_area = roi2_area;
-  global_filters[filter-1].updated = true;
+  global_filters[filter - 1].roi_color_count = roi_c;
+  global_filters[filter - 1].roi_area       = roi_a;
+  global_filters[filter - 1].roi2_count     = roi2_c;
+  global_filters[filter - 1].roi2_area      = roi2_a;
+  global_filters[filter - 1].updated        = true;
   pthread_mutex_unlock(&mutex);
 
   return img;
 }
 
-struct image_t *object_detector1(struct image_t *img, uint8_t camera_id);
-struct image_t *object_detector1(struct image_t *img, uint8_t camera_id __attribute__((unused)))
+static struct image_t *object_detector1(struct image_t *img, uint8_t cam_id)
 {
+  (void)cam_id;
   return object_detector(img, 1);
 }
 
-struct image_t *object_detector2(struct image_t *img, uint8_t camera_id);
-struct image_t *object_detector2(struct image_t *img, uint8_t camera_id __attribute__((unused)))
+static struct image_t *object_detector2(struct image_t *img, uint8_t cam_id)
 {
+  (void)cam_id;
   return object_detector(img, 2);
 }
 
 void color_object_detector_init(void)
 {
-  memset(global_filters, 0, 2*sizeof(struct color_object_t));
+  memset(global_filters, 0, sizeof(global_filters));
   pthread_mutex_init(&mutex, NULL);
+
 #ifdef COLOR_OBJECT_DETECTOR_CAMERA1
 #ifdef COLOR_OBJECT_DETECTOR_LUM_MIN1
   cod_lum_min1 = COLOR_OBJECT_DETECTOR_LUM_MIN1;
   cod_lum_max1 = COLOR_OBJECT_DETECTOR_LUM_MAX1;
-  cod_cb_min1 = COLOR_OBJECT_DETECTOR_CB_MIN1;
-  cod_cb_max1 = COLOR_OBJECT_DETECTOR_CB_MAX1;
-  cod_cr_min1 = COLOR_OBJECT_DETECTOR_CR_MIN1;
-  cod_cr_max1 = COLOR_OBJECT_DETECTOR_CR_MAX1;
+  cod_cb_min1  = COLOR_OBJECT_DETECTOR_CB_MIN1;
+  cod_cb_max1  = COLOR_OBJECT_DETECTOR_CB_MAX1;
+  cod_cr_min1  = COLOR_OBJECT_DETECTOR_CR_MIN1;
+  cod_cr_max1  = COLOR_OBJECT_DETECTOR_CR_MAX1;
 #endif
 #ifdef COLOR_OBJECT_DETECTOR_DRAW1
   cod_draw1 = COLOR_OBJECT_DETECTOR_DRAW1;
 #endif
-
   cv_add_to_device(&COLOR_OBJECT_DETECTOR_CAMERA1, object_detector1, COLOR_OBJECT_DETECTOR_FPS1, 0);
 #endif
 
@@ -187,187 +255,43 @@ void color_object_detector_init(void)
 #ifdef COLOR_OBJECT_DETECTOR_LUM_MIN2
   cod_lum_min2 = COLOR_OBJECT_DETECTOR_LUM_MIN2;
   cod_lum_max2 = COLOR_OBJECT_DETECTOR_LUM_MAX2;
-  cod_cb_min2 = COLOR_OBJECT_DETECTOR_CB_MIN2;
-  cod_cb_max2 = COLOR_OBJECT_DETECTOR_CB_MAX2;
-  cod_cr_min2 = COLOR_OBJECT_DETECTOR_CR_MIN2;
-  cod_cr_max2 = COLOR_OBJECT_DETECTOR_CR_MAX2;
+  cod_cb_min2  = COLOR_OBJECT_DETECTOR_CB_MIN2;
+  cod_cb_max2  = COLOR_OBJECT_DETECTOR_CB_MAX2;
+  cod_cr_min2  = COLOR_OBJECT_DETECTOR_CR_MIN2;
+  cod_cr_max2  = COLOR_OBJECT_DETECTOR_CR_MAX2;
 #endif
 #ifdef COLOR_OBJECT_DETECTOR_DRAW2
   cod_draw2 = COLOR_OBJECT_DETECTOR_DRAW2;
 #endif
-
   cv_add_to_device(&COLOR_OBJECT_DETECTOR_CAMERA2, object_detector2, COLOR_OBJECT_DETECTOR_FPS2, 1);
 #endif
-}
-
-/*
- * color_object_filter
- *
- * Finds the amount of pixels in an image within filter bounds.
- *
- * @param img - input image to process formatted as YUV422.
- * @param lum_min - minimum y value for the filter in YCbCr colorspace
- * @param lum_max - maximum y value for the filter in YCbCr colorspace
- * @param cb_min - minimum cb value for the filter in YCbCr colorspace
- * @param cb_max - maximum cb value for the filter in YCbCr colorspace
- * @param cr_min - minimum cr value for the filter in YCbCr colorspace
- * @param cr_max - maximum cr value for the filter in YCbCr colorspace
- * @param draw - whether or not to draw on image
- * @return number of pixels of image within the filter bounds.
- */
-void color_object_filter(struct image_t *img, bool draw,
-                         uint8_t lum_min, uint8_t lum_max,
-                         uint8_t cb_min, uint8_t cb_max,
-                         uint8_t cr_min, uint8_t cr_max,
-                         uint32_t *p_roi_color_count, uint32_t *p_roi_area,
-                         uint32_t *p_roi2_color_count, uint32_t *p_roi2_area)
-{
-  uint8_t *buffer = img->buf;
-
-  uint16_t roi_w = (uint16_t)(img->w * COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC);
-  uint16_t roi_h = (uint16_t)(img->h * COLOR_OBJECT_DETECTOR_ROI_HEIGHT_FRAC);
-  uint16_t roi2_w = (uint16_t)(img->w * COLOR_OBJECT_DETECTOR_ROI_WIDTH_FRAC); // for now I keep the same size of top ROI as bottom ROI
-  uint16_t roi2_h = (uint16_t)(img->h * COLOR_OBJECT_DETECTOR_ROI_HEIGHT_FRAC); // TODO: make this configurable 
-  if (roi_w == 0) {
-    roi_w = 1;
-  }
-  if (roi_h == 0) {
-    roi_h = 1;
-  }
-  if (roi2_w == 0) { // added these fail safes for roi2 as well
-    roi2_w = 1;
-  }
-  if (roi2_h == 0) {
-    roi2_h = 1;
-  }
-  if (roi_w > img->w) {
-    roi_w = img->w;
-  }
-  if (roi_h > img->h) {
-    roi_h = img->h;
-  }
-  if (roi2_w > img->w) {
-    roi2_w = img->w;
-  }
-  if (roi2_h > img->h) {
-    roi2_h = img->h;
-  }
-  // bounds for roi(1) - bottom center of image used for ground carpet scanning
-  uint16_t roi_y_min = (img->h - roi_h) / 2;
-  uint16_t roi_y_max = roi_y_min + roi_h;
-  uint16_t roi_x_max = roi_w;
-  uint32_t roi_color_count = 0;
-  // bounds for roi2 - top center of image us ed for trees
-  uint16_t roi2_y_min = (img->h - roi2_h) / 2;
-  uint16_t roi2_y_max = roi2_y_min + roi2_h;
-  uint16_t roi2_x_min = img->w - roi2_w;
-  uint32_t roi2_color_count = 0;
-
-  if (draw) {
-    struct point_t from11, to11, from12, to12;
-    struct point_t from22, to22, from21, to21;
-    uint8_t roi_line_color[4] = {90, 255, 240, 255};
-
-    // a guide line to show roi(1)
-    from11.x = roi_x_max;
-    from11.y = roi_y_min;
-    to11.x = roi_x_max;
-    to11.y = roi_y_max - 1;
-    from12.x = 0;
-    from12.y = roi_y_min;
-    to12.x = 0;
-    to12.y = roi_y_max - 1;
-    image_draw_line_color(img, &from12, &to12, roi_line_color); // bottom horizontal line
-    image_draw_line_color(img, &from11, &to11, roi_line_color); // top horizontal line
-    image_draw_line_color(img, &from11, &from12, roi_line_color); // vertical right line
-    image_draw_line_color(img, &to11, &to12, roi_line_color); // vertical left line
-
-    // a guide line to show roi2
-    from21.x = img->w;
-    from21.y = roi2_y_min;
-    to21.x = img->w;
-    to21.y = roi2_y_max - 1;
-    from22.x = roi2_x_min;
-    from22.y = roi2_y_min;
-    to22.x = roi2_x_min;
-    to22.y = roi2_y_max - 1;
-    image_draw_line_color(img, &from22, &to22, roi_line_color); // bottom horizontal line
-    image_draw_line_color(img, &from22, &from21, roi_line_color); // left vertical line
-    image_draw_line_color(img, &to22, &to21, roi_line_color); // right vertical line
-    image_draw_line_color(img, &from21, &to21, roi_line_color); // top horizontal line
-  }
-
-  // Go through all the pixels
-  for (uint16_t y = 0; y < img->h; y++) {
-    for (uint16_t x = 0; x < img->w; x ++) {
-      // Check if the color is inside the specified values
-      uint8_t *yp, *up, *vp;
-      if (x % 2 == 0) {
-        // Even x
-        up = &buffer[y * 2 * img->w + 2 * x];      // U
-        yp = &buffer[y * 2 * img->w + 2 * x + 1];  // Y1
-        vp = &buffer[y * 2 * img->w + 2 * x + 2];  // V
-        //yp = &buffer[y * 2 * img->w + 2 * x + 3]; // Y2
-      } else {
-        // Uneven x
-        up = &buffer[y * 2 * img->w + 2 * x - 2];  // U
-        //yp = &buffer[y * 2 * img->w + 2 * x - 1]; // Y1
-        vp = &buffer[y * 2 * img->w + 2 * x];      // V
-        yp = &buffer[y * 2 * img->w + 2 * x + 1];  // Y2
-      }
-      if ( (*yp >= lum_min) && (*yp <= lum_max) &&
-           (*up >= cb_min ) && (*up <= cb_max ) &&
-           (*vp >= cr_min ) && (*vp <= cr_max )) {
-        if (y >= roi_y_min && y < roi_y_max && x <= roi_x_max) {
-          roi_color_count++;
-        }
-        if (y >= roi2_y_min && y < roi2_y_max && x >= roi2_x_min) {
-          roi2_color_count++;
-        }
-        if (draw){
-          *yp = 255;  // make pixel brighter in image
-        }
-      }
-    }
-  }
-
-  if (p_roi_color_count != NULL) {
-    *p_roi_color_count = roi_color_count;
-  }
-  if (p_roi2_color_count != NULL) {
-    *p_roi2_color_count = roi2_color_count;
-  }
-  if (p_roi_area != NULL) {
-    *p_roi_area = (uint32_t)roi_w * (uint32_t)roi_h;
-  }
-  if (p_roi2_area != NULL) {
-    *p_roi2_area = (uint32_t)roi2_w * (uint32_t)roi2_h;
-  }
 }
 
 void color_object_detector_periodic(void)
 {
   static struct color_object_t local_filters[2];
+
   pthread_mutex_lock(&mutex);
-  memcpy(local_filters, global_filters, 2*sizeof(struct color_object_t));
+  memcpy(local_filters, global_filters, sizeof(local_filters));
   pthread_mutex_unlock(&mutex);
 
-  if(local_filters[0].updated){
-    int16_t roi_count = (int16_t)Min(local_filters[0].roi_color_count, (uint32_t)INT16_MAX);
-    int16_t roi_area = (int16_t)Min(local_filters[0].roi_area, (uint32_t)INT16_MAX);
-    int16_t roi2_count = (int16_t)Min(local_filters[0].roi2_count, (uint32_t)INT16_MAX);
-    int16_t roi2_area = (int16_t)Min(local_filters[0].roi2_area, (uint32_t)INT16_MAX);
-    AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION1_ID, 0, 0,
-        roi_count, roi_area, roi2_count, roi2_area);
+  if (local_filters[0].updated) {
+    int16_t roi_c  = (int16_t)Min(local_filters[0].roi_color_count, (uint32_t)INT16_MAX);
+    int16_t roi_a  = (int16_t)Min(local_filters[0].roi_area,       (uint32_t)INT16_MAX);
+    int32_t roi2_c = (int32_t)Min(local_filters[0].roi2_count,      (uint32_t)INT32_MAX);
+    int16_t roi2_a = (int16_t)Min(local_filters[0].roi2_area,       (uint32_t)INT16_MAX);
+
+    AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION1_ID, 0, 0, roi_c, roi_a, roi2_c, roi2_a);
     local_filters[0].updated = false;
   }
-  if(local_filters[1].updated){
-    int16_t roi_count = (int16_t)Min(local_filters[1].roi_color_count, (uint32_t)INT16_MAX);
-    int16_t roi_area = (int16_t)Min(local_filters[1].roi_area, (uint32_t)INT16_MAX);
-    int16_t roi2_count = (int16_t)Min(local_filters[1].roi2_count, (uint32_t)INT16_MAX);
-    int16_t roi2_area = (int16_t)Min(local_filters[1].roi2_area, (uint32_t)INT16_MAX);
-    AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION2_ID, 0, 0,
-        roi_count, roi_area, roi2_count, roi2_area);
+
+  if (local_filters[1].updated) {
+    int16_t roi_c  = (int16_t)Min(local_filters[1].roi_color_count, (uint32_t)INT16_MAX);
+    int16_t roi_a  = (int16_t)Min(local_filters[1].roi_area,       (uint32_t)INT16_MAX);
+    int32_t roi2_c = (int32_t)Min(local_filters[1].roi2_count,      (uint32_t)INT32_MAX);
+    int16_t roi2_a = (int16_t)Min(local_filters[1].roi2_area,       (uint32_t)INT16_MAX);
+
+    AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION2_ID, 0, 0, roi_c, roi_a, roi2_c, roi2_a);
     local_filters[1].updated = false;
   }
 }
