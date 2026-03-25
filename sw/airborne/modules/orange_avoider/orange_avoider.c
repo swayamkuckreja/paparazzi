@@ -57,7 +57,6 @@ static struct video_listener *oa_vis_listener = NULL;
 
 static struct image_t *orange_avoider_vis_cb(struct image_t *img, uint8_t cam_id);
 
-
 static void opticflow_cb(uint8_t sender_id,
                          uint32_t stamp,
                          int flow_x, int flow_y,
@@ -160,7 +159,9 @@ void orange_avoider_init(void)
   AbiBindMsgOPTICAL_FLOW(ABI_BROADCAST, &opticflow_ev, opticflow_cb);
 
   pthread_mutex_init(&oa_vis_mutex, NULL);
-  oa_vis_listener = cv_add_to_device(&front_camera, orange_avoider_vis_cb, 10, 0);
+
+  // pick an id that won’t clash with other listeners
+  oa_vis_listener = cv_add_to_device(&front_camera, orange_avoider_vis_cb, 10, 42);
 
 }
 
@@ -262,7 +263,7 @@ void orange_avoider_periodic(void)
   if (prox > 1.f) prox = 1.f;
 
   pthread_mutex_lock(&oa_vis_mutex);
-  oa_prox01 = of_good ? prox : 0.f;
+  oa_prox01 = prox;
   pthread_mutex_unlock(&oa_vis_mutex);
 
 
@@ -339,20 +340,38 @@ void orange_avoider_periodic(void)
 
 static struct image_t *orange_avoider_vis_cb(struct image_t *img, uint8_t cam_id)
 {
-  (void)cam_id; // not used
+  (void)cam_id;
 
   float prox;
   pthread_mutex_lock(&oa_vis_mutex);
-  prox = oa_prox01;
+  prox = oa_prox01;        // 0..1
   pthread_mutex_unlock(&oa_vis_mutex);
 
-  const uint8_t U = 128, V = 128;
-  uint8_t Y = (uint8_t)(30 + prox * 200);
+  // Map prox to color: green (far) -> red (close)
+  float t = prox;
+  float R = 255.f * t;
+  float G = 255.f * (1.f - t);
+  float B = 0.f;
 
-  int bar_w = 12;
+  // Simple RGB->YUV (BT.601-ish)
+  float Yf =  0.299f*R + 0.587f*G + 0.114f*B;
+  float Uf = -0.169f*R - 0.331f*G + 0.500f*B + 128.f;
+  float Vf =  0.500f*R - 0.419f*G - 0.081f*B + 128.f;
+
+  // clamp 0..255
+  if (Yf < 0.f) Yf = 0.f; if (Yf > 255.f) Yf = 255.f;
+  if (Uf < 0.f) Uf = 0.f; if (Uf > 255.f) Uf = 255.f;
+  if (Vf < 0.f) Vf = 0.f; if (Vf > 255.f) Vf = 255.f;
+
+  uint8_t Y = (uint8_t)Yf;
+  uint8_t U = (uint8_t)Uf;
+  uint8_t V = (uint8_t)Vf;
+
+  // Draw a left-side bar
+  int bar_w = 18;
   if (bar_w > img->w) bar_w = img->w;
 
-  uint8_t *buf = (uint8_t *)img->buf;
+  uint8_t *buf = (uint8_t *)img->buf; // important cast (img->buf is void*)
   for (int y = 0; y < img->h; y++) {
     for (int x = 0; x < bar_w; x++) {
       uint8_t *p = buf + y * img->w * 2 + (x / 2) * 4; // U Y0 V Y1
@@ -360,8 +379,10 @@ static struct image_t *orange_avoider_vis_cb(struct image_t *img, uint8_t cam_id
       if ((x & 1) == 0) p[1] = Y; else p[3] = Y;
     }
   }
+
   return img;
 }
+
 
 
 
