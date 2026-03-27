@@ -1,0 +1,29 @@
+{
+  "hsv_lower": [
+    22,
+    49,
+    44
+  ],
+  "hsv_upper": [
+    79,
+    255,
+    205
+  ],
+  "edge_density_min": 4.9,
+  "dir_spread_min": 72.0,
+  "straight_lines_max": 6,
+  "canny_low": 30,
+  "canny_high": 90,
+  "min_blob_area": 300,
+  "max_blob_area": 200000,
+  "min_green_pct": 15.0,
+  "min_edge_density": 4.0,
+  "min_dir_spread": 70.0,
+  "min_hue_std": 4.0,
+  "min_val_std": 22.0,
+  "max_aspect_ratio": 3.5,
+  "min_box_width": 40,
+  "min_box_height": 40,
+  "sample_count": 2005,
+  "images_processed": 1070
+}
